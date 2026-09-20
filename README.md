@@ -1,4 +1,4 @@
-# GPS Safety Jewellery Wearable — Companion App
+# GPS Safety Jewellery Wearable  Companion App
 
 A Flutter-based companion application for the GPS Safety Jewellery 
 Wearable system, designed to improve personal safety for women 
