@@ -27,3 +27,30 @@ doc/api/
 
 .flutter-plugins
 .flutter-plugins-dependencies
+
+
+# Environment variables — never commit real keys
+.env
+*.env
+!.env.example
+
+# Flutter
+app/.dart_tool/
+app/build/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+
+# Python
+backend/__pycache__/
+backend/.venv/
+backend/*.pyc
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# KiCad auto-generated
+hardware/kicad/*-backups/
+
+# Logs
+*.log
