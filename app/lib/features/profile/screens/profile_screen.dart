@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/controllers/auth_controller.dart';
 import '../../../models/user_model.dart';
+import '../../community/controllers/community_alert_controller.dart';
+import '../../community/widgets/community_alert_dialog.dart';
+import '../../community/widgets/community_terms_sheet.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -122,6 +125,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
+    final communityCtrl = context.watch<CommunityAlertController>();
     final user = authController.currentUser;
     _syncUserToControllers(user);
 
@@ -494,6 +498,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 const SizedBox(height: 20),
               ],
 
+              // Dedicated Community Responder Settings & Verification Card
+              _buildCommunityResponderSettingsCard(context, communityCtrl, authController),
+              const SizedBox(height: 24),
+
               // Quick Actions List
               const Text(
                 'SAFETY PREFERENCES & FEATURES',
@@ -686,6 +694,199 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCommunityResponderSettingsCard(
+    BuildContext context,
+    CommunityAlertController communityCtrl,
+    AuthController authCtrl,
+  ) {
+    final isResponder = communityCtrl.isCommunityResponder;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isResponder ? AppColors.primary.withValues(alpha: 0.4) : AppColors.border,
+          width: isResponder ? 1.5 : 1.0,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isResponder
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.health_and_safety_rounded,
+                  color: isResponder ? AppColors.primary : AppColors.textSecondary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Community Responder',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isResponder ? 'Active (Monitoring 2.0 km Radius)' : 'Inactive (Not Receiving Alerts)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: isResponder ? const Color(0xFF10B981) : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: isResponder,
+                activeThumbColor: AppColors.primary,
+                onChanged: (val) async {
+                  await communityCtrl.toggleOptIn(val);
+                  await authCtrl.updateProfile(
+                    fullName: _nameController.text.trim().isNotEmpty
+                        ? _nameController.text.trim()
+                        : (authCtrl.currentUser?.fullName ?? 'User'),
+                    phoneNumber: _phoneController.text.trim().isNotEmpty
+                        ? _phoneController.text.trim()
+                        : (authCtrl.currentUser?.phoneNumber ?? ''),
+                    isCommunityResponder: val,
+                  );
+                  setState(() => _isCommunityResponder = val);
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            isResponder
+                ? 'Your device will sound a high-priority emergency siren and vibrate if someone triggers an SOS within 2 km of your location.'
+                : 'Turn on to join the local community safety network. Anyone can respond — with or without a pendant!',
+            style: const TextStyle(
+              fontSize: 13,
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Specs Badges Row
+          Row(
+            children: [
+              _buildFeatureBadge(Icons.radar_rounded, '2.0 km Radius'),
+              const SizedBox(width: 8),
+              _buildFeatureBadge(Icons.volume_up_rounded, 'High Siren'),
+              const SizedBox(width: 8),
+              _buildFeatureBadge(Icons.lock_outline_rounded, 'Privacy First'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(color: AppColors.border, height: 1),
+          const SizedBox(height: 14),
+
+          // Action Buttons: Test Simulation & Terms
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    communityCtrl.simulateTestAlert();
+                    final alert = communityCtrl.latestUnacknowledgedAlert;
+                    if (alert != null) {
+                      CommunityAlertDialog.show(context, alert, communityCtrl);
+                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Simulating 2km distress alert! Siren and responder popup active.'),
+                        backgroundColor: AppColors.sosRed,
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.play_circle_fill_rounded, size: 18, color: Colors.white),
+                  label: const Text(
+                    'Test 2km Alert',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.sosRed,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => CommunityTermsSheet.show(context),
+                  icon: const Icon(Icons.description_outlined, size: 16, color: AppColors.textPrimary),
+                  label: const Text(
+                    'Terms & Code',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    side: const BorderSide(color: AppColors.border),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeatureBadge(IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.inputBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppColors.textSecondary),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
       ),
     );
   }

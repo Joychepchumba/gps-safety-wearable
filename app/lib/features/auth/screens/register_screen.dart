@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/validators.dart';
 import '../controllers/auth_controller.dart';
+import '../../community/widgets/community_terms_sheet.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -23,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isPasswordVisible = false;
   bool _isConfirmVisible = false;
   bool _isCommunityResponder = false;
+  bool _hasAgreedToCommunityTerms = false;
 
   @override
   void dispose() {
@@ -37,6 +39,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _submit(AuthController authController) async {
     if (_formKey.currentState?.validate() ?? false) {
+      if (_isCommunityResponder && !_hasAgreedToCommunityTerms) {
+        final agreed = await CommunityTermsSheet.show(context);
+        if (agreed != true) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Please accept the Community Responder Guidelines to register as a responder, or toggle it off.'),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() => _hasAgreedToCommunityTerms = true);
+      }
+
+      if (!mounted) return;
       final email = _emailController.text.trim();
       final success = await authController.register(
         fullName: _nameController.text.trim(),
@@ -422,7 +441,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                                 SizedBox(height: 2),
                                 Text(
-                                  'Help keep people near you safe',
+                                  'Receive alerts within 2 km of your location',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: AppColors.textSecondary,
@@ -433,18 +452,73 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           Switch(
                             value: _isCommunityResponder,
-                            onChanged: (val) => setState(() => _isCommunityResponder = val),
+                            onChanged: (val) async {
+                              if (val && !_hasAgreedToCommunityTerms) {
+                                final agreed = await CommunityTermsSheet.show(context);
+                                if (agreed == true) {
+                                  setState(() {
+                                    _isCommunityResponder = true;
+                                    _hasAgreedToCommunityTerms = true;
+                                  });
+                                }
+                              } else {
+                                setState(() => _isCommunityResponder = val);
+                              }
+                            },
                             activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        'Opt in to receive silent alerts if someone triggers an emergency within 1 km of your location. Anyone can be a responder — with or without a pendant!',
+                        'Opt in to receive high-priority alerts with sound and vibration if someone triggers an emergency within 2 km of your location. Anyone can be a responder — with or without a pendant!',
                         style: TextStyle(
                           fontSize: 12,
                           color: AppColors.textSecondary,
                           height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      InkWell(
+                        onTap: () async {
+                          final agreed = await CommunityTermsSheet.show(context);
+                          if (agreed == true) {
+                            setState(() {
+                              _hasAgreedToCommunityTerms = true;
+                              _isCommunityResponder = true;
+                            });
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _hasAgreedToCommunityTerms
+                                    ? Icons.check_circle_rounded
+                                    : Icons.description_outlined,
+                                color: _hasAgreedToCommunityTerms
+                                    ? const Color(0xFF10B981)
+                                    : AppColors.primary,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _hasAgreedToCommunityTerms
+                                    ? 'Terms & Guidelines Agreed (Tap to view)'
+                                    : 'Read Terms & Code of Conduct',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: _hasAgreedToCommunityTerms
+                                      ? const Color(0xFF10B981)
+                                      : AppColors.primary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],

@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../../../models/panic_event_model.dart';
+import 'package:flutter/services.dart';
+import 'package:vibration/vibration.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/location_service.dart';
+import '../../../core/navigation/navigation_service.dart';
 import '../../../core/di/service_locator.dart';
 import '../services/shake_detector_service.dart';
 import '../services/voice_activation_service.dart';
@@ -18,7 +21,7 @@ enum TriggerMethod { button, appShake, pendantTouch, voice, duressPin }
 class EmergencyController extends ChangeNotifier {
   EmergencyState state = EmergencyState.idle;
   TriggerMethod activeTriggerMethod = TriggerMethod.button;
-  int countdownSeconds = 10;
+  int countdownSeconds = 6;
   PanicEventModel? activeEvent;
   Timer? _countdownTimer;
 
@@ -62,33 +65,93 @@ class EmergencyController extends ChangeNotifier {
     }
 
     activeTriggerMethod = method;
+
+    // Navigate to full-screen emergency mode immediately
+    NavigationService.pushNamed('/emergency');
+
+    if (method == TriggerMethod.voice) {
+      // Voice activation is always intentional - rapid 1s confirmation then dispatch
+      state = EmergencyState.countdown;
+      countdownSeconds = 1;
+      notifyListeners();
+
+      HapticFeedback.heavyImpact();
+      _startCountdownVibration(short: true);
+
+      _countdownTimer?.cancel();
+      _countdownTimer = Timer(const Duration(seconds: 1), () {
+        _stopVibration();
+        _sendAlert();
+      });
+      return;
+    }
+
+    // Shake or Button: Provide cancel countdown with prominent vibration
+    // For shake: 6s countdown to easily cancel accidental shakes
     state = EmergencyState.countdown;
-    countdownSeconds = 10;
+    countdownSeconds = (method == TriggerMethod.appShake) ? 6 : 5;
     notifyListeners();
+
+    _startCountdownVibration();
 
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (countdownSeconds > 0) {
+      if (countdownSeconds > 1) {
         countdownSeconds--;
         notifyListeners();
       } else {
         timer.cancel();
+        _stopVibration();
         _sendAlert();
       }
     });
   }
 
+  void sendImmediately() {
+    if (state == EmergencyState.countdown) {
+      _countdownTimer?.cancel();
+      _stopVibration();
+      _sendAlert();
+    }
+  }
+
   void cancel() {
     if (state == EmergencyState.countdown) {
       _countdownTimer?.cancel();
+      _stopVibration();
       state = EmergencyState.cancelled;
       notifyListeners();
 
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(const Duration(milliseconds: 600), () {
         state = EmergencyState.idle;
         notifyListeners();
+        NavigationService.pop();
       });
     }
+  }
+
+  void _startCountdownVibration({bool short = false}) async {
+    try {
+      final hasVib = await Vibration.hasVibrator();
+      if (hasVib == true) {
+        if (short) {
+          Vibration.vibrate(pattern: [0, 200, 100, 300]);
+        } else {
+          // Continuous rhythmic buzzing during shake countdown
+          Vibration.vibrate(pattern: [0, 400, 200, 400, 200, 400], repeat: 0);
+        }
+      } else {
+        HapticFeedback.heavyImpact();
+      }
+    } catch (_) {
+      HapticFeedback.heavyImpact();
+    }
+  }
+
+  void _stopVibration() async {
+    try {
+      await Vibration.cancel();
+    } catch (_) {}
   }
 
   Future<void> _sendAlert() async {
@@ -222,15 +285,31 @@ class EmergencyController extends ChangeNotifier {
       }
 
       state = EmergencyState.sent;
+      _stopVibration();
+
+      // Clear, unmistakable alert sent confirmation (distinct triple pulse + alert tone)
+      try {
+        final hasVib = await Vibration.hasVibrator();
+        if (hasVib == true) {
+          Vibration.vibrate(pattern: [0, 300, 150, 300, 150, 600]);
+        } else {
+          HapticFeedback.heavyImpact();
+        }
+      } catch (_) {
+        HapticFeedback.heavyImpact();
+      }
+      SystemSound.play(SystemSoundType.alert);
     } catch (e) {
       debugPrint('Error sending alert: $e');
       state = EmergencyState.failed;
+      _stopVibration();
     } finally {
       notifyListeners();
     }
   }
 
   Future<void> resolveAlert(String panicEventId) async {
+    _stopVibration();
     try {
       await _supabaseService.client
           .from('panic_events')

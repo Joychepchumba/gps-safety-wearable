@@ -305,6 +305,34 @@ class CommunityAlertController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Generates a realistic simulated 2 km distress notification
+  /// so that the user can verify their phone's siren, vibration, and responder dialog.
+  void simulateTestAlert() {
+    final double baseLat = lastKnownPosition?.latitude ?? -1.2825;
+    final double baseLng = lastKnownPosition?.longitude ?? 36.8222;
+
+    final testId = 'test-alert-${DateTime.now().millisecondsSinceEpoch}';
+    final testAlert = CommunityAlertModel(
+      panicEventId: testId,
+      userName: 'Test Distress Alert',
+      latitude: baseLat + 0.0021,
+      longitude: baseLng + 0.0018,
+      distanceMeters: 310.0,
+      mapsLink: 'https://www.google.com/maps/search/?api=1&query=${baseLat + 0.0021},${baseLng + 0.0018}',
+      triggerMethod: 'shake',
+      triggeredAt: DateTime.now(),
+      status: 'active',
+    );
+
+    activeAlerts.removeWhere((a) => a.panicEventId.startsWith('test-alert-'));
+    activeAlerts.insert(0, testAlert);
+    latestUnacknowledgedAlert = testAlert;
+
+    // Trigger siren tone and SOS vibration
+    _triggerAudibleAndVibratoryDistressAlert();
+    notifyListeners();
+  }
+
   double _calculateHaversineDistance(double lat1, double lng1, double lat2, double lng2) {
     const double r = 6371000; // Earth's radius in meters
     final double phi1 = lat1 * pi / 180;

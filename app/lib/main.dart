@@ -33,6 +33,10 @@ import 'features/profile/screens/profile_screen.dart';
 import 'features/emergency/screens/voice_activation_screen.dart';
 
 
+import 'core/navigation/navigation_service.dart';
+
+final GlobalKey<NavigatorState> rootNavigatorKey = NavigationService.navigatorKey;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseConfig.initialize();
@@ -58,6 +62,7 @@ class SafeGuardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => sl<CommunityAlertController>()),
       ],
       child: MaterialApp(
+        navigatorKey: rootNavigatorKey,
         title: 'SafeLink',
         debugShowCheckedModeBanner: false,
         theme: ThemeData.light().copyWith(
