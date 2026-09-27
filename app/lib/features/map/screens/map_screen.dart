@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart' hide MapController;
 import 'package:flutter_map/flutter_map.dart' as fmap show MapController;
 import 'package:latlong2/latlong.dart';
@@ -23,6 +24,14 @@ class _MapScreenState extends State<MapScreen> {
   String _activeFilter = 'all'; // 'all', 'police', 'danger', 'responders'
   bool _showBottomDetails = true;
   bool _hasCenteredOnUser = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<MapController>().checkActiveSharingSession();
+    });
+  }
 
   void _recenterMap(double lat, double lng, {double zoom = 16.5}) {
     _mapUiController.move(LatLng(lat, lng), zoom);
@@ -271,125 +280,227 @@ class _MapScreenState extends State<MapScreen> {
             ],
           ),
 
-          // 2. Top Filter Chips
+          // 2. Top Interactive Banners & Filter Chips
           Positioned(
             top: 14,
             left: 16,
             right: 16,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildFilterChip('all', 'All Safety Points', Icons.layers_outlined),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('police', 'Police Stations', Icons.local_police_outlined),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('danger', 'Crime Hotspots', Icons.warning_amber_rounded),
-                  const SizedBox(width: 8),
-                  _buildFilterChip('responders', 'Nearby Responders', Icons.health_and_safety_outlined),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 2a. Active Live 3D Location Sharing Banner
+                if (controller.isSharingLocation) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.6), width: 1.5),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF10B981),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF10B981).withValues(alpha: 0.8),
+                                blurRadius: 6,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'LIVE 3D SHARING ACTIVE',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 12,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${controller.remainingSharingTimeFormatted} remaining • Real-time GPS beacon',
+                                style: const TextStyle(color: Color(0xFF34D399), fontSize: 11, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.share_rounded, color: Colors.white, size: 18),
+                          tooltip: 'Share Live Link',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () => controller.shareViaNativeSheet(),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 18),
+                          tooltip: 'Copy Tracking Link',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            if (controller.shareableLink != null) {
+                              Clipboard.setData(ClipboardData(text: controller.shareableLink!));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('3D Tracking link copied to clipboard!'),
+                                  backgroundColor: Color(0xFF10B981),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.cancel_rounded, color: Color(0xFFEF4444), size: 20),
+                          tooltip: 'Cancel Sharing',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () async {
+                            await controller.cancelRealTimeLocationSharing();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Real-time location sharing stopped.'),
+                                  backgroundColor: Colors.orange,
+                                ),
+                              );
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                 ],
-              ),
-            ),
-          ),
 
-          // 3. Danger Zone Live Warning Banner
-          if (insideZone != null)
-            Positioned(
-              top: 66,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: AppColors.sosRed,
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: const [
-                    BoxShadow(color: Colors.black38, blurRadius: 10, offset: Offset(0, 4)),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                // 2b. Danger Zone Live Warning Banner
+                if (insideZone != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.sosRed,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(color: Colors.black38, blurRadius: 10, offset: Offset(0, 4)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'HAZARD WARNING: HIGH-RISK ZONE',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.5),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'You entered ${insideZone.locationName}. Stay vigilant and keep wearable ready.',
+                                style: const TextStyle(color: Colors.white, fontSize: 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+
+                // 2c. Active Community Distress Emergency Banner (Within 2 km)
+                if (communityCtrl.activeAlerts.isNotEmpty) ...[
+                  GestureDetector(
+                    onTap: () => CommunityAlertDialog.show(
+                      context,
+                      communityCtrl.activeAlerts.first,
+                      communityCtrl,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: AppColors.sosRed,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: const [
+                          BoxShadow(color: Colors.black45, blurRadius: 12, offset: Offset(0, 4)),
+                        ],
+                      ),
+                      child: Row(
                         children: [
-                          const Text(
-                            'HAZARD WARNING: HIGH-RISK ZONE',
-                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12, letterSpacing: 0.5),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'You entered ${insideZone.locationName}. Stay vigilant and keep wearable ready.',
-                            style: const TextStyle(color: Colors.white, fontSize: 11),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '🚨 DISTRESS NEARBY: ${communityCtrl.activeAlerts.first.userName.toUpperCase()}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${communityCtrl.activeAlerts.first.formattedDistance} • Tap to view location & navigate',
+                                  style: const TextStyle(color: Colors.white, fontSize: 11),
+                                ),
+                              ],
+                            ),
                           ),
+                          const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-          // 3b. Active Community Distress Emergency Banner (Within 2 km)
-          if (communityCtrl.activeAlerts.isNotEmpty)
-            Positioned(
-              top: insideZone != null ? 140 : 66,
-              left: 16,
-              right: 16,
-              child: GestureDetector(
-                onTap: () => CommunityAlertDialog.show(
-                  context,
-                  communityCtrl.activeAlerts.first,
-                  communityCtrl,
-                ),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.sosRed,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: const [
-                      BoxShadow(color: Colors.black45, blurRadius: 12, offset: Offset(0, 4)),
-                    ],
                   ),
+                  const SizedBox(height: 8),
+                ],
+
+                // 2d. Filter Chips
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.25),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '🚨 DISTRESS NEARBY: ${communityCtrl.activeAlerts.first.userName.toUpperCase()}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${communityCtrl.activeAlerts.first.formattedDistance} • Tap to view location & navigate',
-                              style: const TextStyle(color: Colors.white, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+                      _buildFilterChip('all', 'All Safety Points', Icons.layers_outlined),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('police', 'Police Stations', Icons.local_police_outlined),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('danger', 'Crime Hotspots', Icons.warning_amber_rounded),
+                      const SizedBox(width: 8),
+                      _buildFilterChip('responders', 'Nearby Responders', Icons.health_and_safety_outlined),
                     ],
                   ),
                 ),
-              ),
+              ],
             ),
+          ),
 
           // 4. Map Control Buttons (Recenter & Voice Wake Word)
           Positioned(
@@ -509,15 +620,28 @@ class _MapScreenState extends State<MapScreen> {
                       children: [
                         Expanded(
                           child: OutlinedButton.icon(
-                            onPressed: () => controller.shareLiveLocation(),
-                            icon: const Icon(Icons.share_location_rounded, color: AppColors.primary, size: 18),
-                            label: const Text(
-                              'Share Live GPS',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.primary),
+                            onPressed: () => _showShareLocationSheet(context, controller),
+                            icon: Icon(
+                              controller.isSharingLocation ? Icons.wifi_tethering_rounded : Icons.share_location_rounded,
+                              color: controller.isSharingLocation ? const Color(0xFF10B981) : AppColors.primary,
+                              size: 18,
+                            ),
+                            label: Text(
+                              controller.isSharingLocation
+                                  ? 'Sharing (${controller.remainingSharingTimeFormatted})'
+                                  : 'Share Live 3D',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: controller.isSharingLocation ? const Color(0xFF10B981) : AppColors.primary,
+                              ),
                             ),
                             style: OutlinedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 14),
-                              side: const BorderSide(color: AppColors.primary, width: 1.5),
+                              side: BorderSide(
+                                color: controller.isSharingLocation ? const Color(0xFF10B981) : AppColors.primary,
+                                width: 1.5,
+                              ),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
@@ -682,6 +806,319 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showShareLocationSheet(BuildContext context, MapController controller) {
+    int selectedHours = controller.sharingDurationHours.clamp(1, 24);
+    if (selectedHours < 1 || selectedHours > 24) selectedHours = 8;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final isSharing = controller.isSharingLocation;
+
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Handle bar
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Header
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: isSharing
+                            ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                            : AppColors.primary.withValues(alpha: 0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isSharing ? Icons.wifi_tethering_rounded : Icons.share_location_rounded,
+                        color: isSharing ? const Color(0xFF10B981) : AppColors.primary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isSharing ? 'Live 3D Sharing Active' : 'Share Live 3D Location',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          Text(
+                            isSharing
+                                ? '${controller.remainingSharingTimeFormatted} left • Real-time GPS beacon'
+                                : 'Select duration (1h to 24h) for your live Mapbox 3D tracking link',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isSharing ? const Color(0xFF059669) : AppColors.textSecondary,
+                              fontWeight: isSharing ? FontWeight.w700 : FontWeight.normal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 18),
+
+                // If already sharing, display the active URL and controls
+                if (isSharing && controller.shareableLink != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0F172A),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.4)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'YOUR 3D MAPBOX TRACKING LINK',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.link_rounded, color: Color(0xFF38BDF8), size: 18),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                controller.shareableLink!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF38BDF8),
+                                  fontSize: 12,
+                                  fontFamily: 'monospace',
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 18),
+                              onPressed: () {
+                                Clipboard.setData(ClipboardData(text: controller.shareableLink!));
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Tracking link copied to clipboard!'),
+                                    backgroundColor: Color(0xFF10B981),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      controller.shareViaNativeSheet();
+                    },
+                    icon: const Icon(Icons.share_rounded, color: Colors.white),
+                    label: const Text('Share Link via WhatsApp / SMS', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2563EB),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await controller.cancelRealTimeLocationSharing();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Live location sharing cancelled.'),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.cancel_outlined, color: AppColors.sosRed),
+                    label: const Text('Stop Location Sharing', style: TextStyle(color: AppColors.sosRed, fontWeight: FontWeight.bold)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: AppColors.sosRed),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ] else ...[
+                  // Not sharing yet: Duration Picker
+                  const Text(
+                    'SHARING DURATION',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Quick Duration Chips
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [1, 2, 4, 8, 12, 24].map((hours) {
+                      final isSel = selectedHours == hours;
+                      final label = hours == 8 ? '8h (Default)' : hours == 24 ? '24h (Max)' : '${hours}h';
+                      return ChoiceChip(
+                        label: Text(label),
+                        selected: isSel,
+                        selectedColor: AppColors.primary,
+                        backgroundColor: Colors.grey.shade100,
+                        labelStyle: TextStyle(
+                          color: isSel ? Colors.white : AppColors.textPrimary,
+                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        onSelected: (val) {
+                          if (val) {
+                            setSheetState(() => selectedHours = hours);
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+
+                  const SizedBox(height: 14),
+
+                  // Slider for continuous 1 to 24 hours selection
+                  Row(
+                    children: [
+                      const Text('1h', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                      Expanded(
+                        child: Slider(
+                          value: selectedHours.toDouble(),
+                          min: 1.0,
+                          max: 24.0,
+                          divisions: 23,
+                          activeColor: AppColors.primary,
+                          label: '${selectedHours}h',
+                          onChanged: (val) {
+                            setSheetState(() => selectedHours = val.round());
+                          },
+                        ),
+                      ),
+                      const Text('24h', style: TextStyle(fontSize: 12, color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+
+                  // Info Card
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded, color: AppColors.primary, size: 20),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Your phone will ping GPS every 10 seconds. Live 3D Mapbox tracking link expires in $selectedHours hour${selectedHours > 1 ? 's' : ''}. You can cancel anytime.',
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary, height: 1.35),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Start Sharing Button
+                  ElevatedButton.icon(
+                    onPressed: controller.isStartingSharing
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+                            final link = await controller.startRealTimeLocationSharing(
+                              durationHours: selectedHours,
+                            );
+                            if (context.mounted && link != null) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Live 3D tracking started for ${selectedHours}h!'),
+                                  backgroundColor: const Color(0xFF10B981),
+                                ),
+                              );
+                              // Prompt native share immediately
+                              controller.shareViaNativeSheet();
+                            }
+                          },
+                    icon: controller.isStartingSharing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Icon(Icons.share_location_rounded, color: Colors.white),
+                    label: Text(
+                      controller.isStartingSharing
+                          ? 'Starting Live Beacon...'
+                          : 'Start Live 3D Sharing (${selectedHours}h)',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
       ),
     );
   }

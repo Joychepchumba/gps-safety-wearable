@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../controllers/emergency_controller.dart';
@@ -474,6 +476,207 @@ class _EmergencyScreenState extends State<EmergencyScreen> with SingleTickerProv
                   title: 'Live GPS Coordinates',
                   subtitle: 'Lat: ${lat.toStringAsFixed(5)}, Lng: ${lng.toStringAsFixed(5)} (Broadcasted)',
                 ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // 3D Mapbox Real-Time Tracking Link Card (8-Hour Default Session)
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16192E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: controller.isSharingLocation
+                    ? const Color(0xFF10B981).withValues(alpha: 0.6)
+                    : Colors.white24,
+                width: 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: controller.isSharingLocation
+                      ? const Color(0xFF10B981).withValues(alpha: 0.2)
+                      : Colors.black26,
+                  blurRadius: 16,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: controller.isSharingLocation
+                            ? const Color(0xFF10B981)
+                            : Colors.orangeAccent,
+                        boxShadow: [
+                          if (controller.isSharingLocation)
+                            BoxShadow(
+                              color: const Color(0xFF10B981).withValues(alpha: 0.8),
+                              blurRadius: 8,
+                              spreadRadius: 2,
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      '3D MAPBOX LIVE TRACKING',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: controller.isSharingLocation
+                            ? const Color(0xFF10B981).withValues(alpha: 0.15)
+                            : Colors.white12,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: controller.isSharingLocation
+                              ? const Color(0xFF10B981).withValues(alpha: 0.4)
+                              : Colors.white24,
+                        ),
+                      ),
+                      child: Text(
+                        controller.isSharingLocation ? '8-HOUR BEACON ACTIVE' : 'SHARING PAUSED',
+                        style: TextStyle(
+                          color: controller.isSharingLocation
+                              ? const Color(0xFF10B981)
+                              : Colors.white70,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  controller.isSharingLocation
+                      ? 'Live 3D telemetry is actively pinging every 8s. Guardians & responders can follow your altitude, speed, nearby police, and building extrusions.'
+                      : 'You paused live location sharing. Responders still retain your last broadcasted GPS coordinates.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                if (controller.activeTrackingUrl != null) ...[
+                  const SizedBox(height: 12),
+                  // Link Box
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white12),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.link_rounded, color: Color(0xFF38BDF8), size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            controller.activeTrackingUrl!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF38BDF8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'monospace',
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.copy_rounded, color: Colors.white70, size: 18),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: controller.activeTrackingUrl!));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('3D Tracking link copied to clipboard!'),
+                                backgroundColor: Color(0xFF10B981),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  // Action buttons: Share Link + Cancel Sharing
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            SharePlus.instance.share(
+                              ShareParams(
+                                text: '🚨 EMERGENCY: I have activated SafeLink SOS. Track my real-time 3D location, status and nearby units here:\n${controller.activeTrackingUrl!}',
+                                subject: '🚨 SafeLink Emergency Live 3D Tracking',
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.share_rounded, size: 16, color: Colors.white),
+                          label: const Text(
+                            'SHARE LINK',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            padding: const EdgeInsets.symmetric(vertical: 11),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      if (controller.isSharingLocation)
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              await controller.cancelRealTimeSharing();
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Live location sharing cancelled.'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.stop_circle_outlined, size: 16, color: Colors.white70),
+                            label: const Text(
+                              'CANCEL SHARING',
+                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white70),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.white24),
+                              padding: const EdgeInsets.symmetric(vertical: 11),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),

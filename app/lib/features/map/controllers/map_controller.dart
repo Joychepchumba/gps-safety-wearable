@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
 import 'package:share_plus/share_plus.dart';
 import '../models/police_station_model.dart';
 import '../models/danger_zone_model.dart';
 import '../../../models/panic_event_model.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/di/service_locator.dart';
@@ -16,7 +19,16 @@ class MapController extends ChangeNotifier {
   List<Map<String, dynamic>> nearbyResponders = [];
   DangerZoneModel? activeDangerZoneWarning;
   PanicEventModel? activeAlert;
+
+  // Real-Time Location Sharing State
   bool isSharingLocation = false;
+  int sharingDurationHours = 8;
+  DateTime? sharingExpiresAt;
+  String? sharingSessionToken;
+  String? shareableLink;
+  Timer? _locationPingTimer;
+  bool isStartingSharing = false;
+
   bool isLoading = false;
 
   final SupabaseService _supabaseService = sl<SupabaseService>();
@@ -25,6 +37,18 @@ class MapController extends ChangeNotifier {
 
   MapController() {
     initialize();
+  }
+
+  String get remainingSharingTimeFormatted {
+    if (sharingExpiresAt == null) return '${sharingDurationHours}h';
+    final diff = sharingExpiresAt!.difference(DateTime.now());
+    if (diff.isNegative) return 'Expired';
+    final hours = diff.inHours;
+    final mins = diff.inMinutes % 60;
+    if (hours > 0) {
+      return '${hours}h ${mins}m';
+    }
+    return '${mins}m';
   }
 
   Future<void> initialize() async {
@@ -78,6 +102,9 @@ class MapController extends ChangeNotifier {
     // 4. Load community responders
     await loadNearbyResponders();
 
+    // 5. Check if user already has an active sharing session
+    await checkActiveSharingSession();
+
     isLoading = false;
     notifyListeners();
   }
@@ -87,7 +114,7 @@ class MapController extends ChangeNotifier {
     _positionStreamSub = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
+        distanceFilter: 10,
       ),
     ).listen((Position pos) {
       currentPosition = pos;
@@ -169,36 +196,221 @@ class MapController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Share live location link with contacts via native sharing
-  Future<void> shareLiveLocation({String? customMessage}) async {
-    if (currentPosition == null) return;
-    isSharingLocation = true;
+  // ─── REAL-TIME LOCATION SHARING ─────────────────────────────────────────────
+
+  /// Starts real-time location sharing with configurable duration (1 - 24 hours).
+  /// Pings GPS coordinates continuously every 10 seconds.
+  Future<String?> startRealTimeLocationSharing({
+    int durationHours = 8,
+    bool isEmergency = false,
+  }) async {
+    final user = _supabaseService.currentUser;
+    if (user == null) return null;
+
+    isStartingSharing = true;
     notifyListeners();
 
-    final lat = currentPosition!.latitude.toStringAsFixed(6);
-    final lng = currentPosition!.longitude.toStringAsFixed(6);
-    final mapsUrl = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
-
-    final text = customMessage ??
-        '🚨 SafeLink Live Tracking Alert: I am sharing my current location for safety.\n'
-        'Coordinates: $lat, $lng\n'
-        'Live Map Link: $mapsUrl';
+    final clampedDuration = durationHours.clamp(1, 24);
+    sharingDurationHours = clampedDuration;
 
     try {
-      // ignore: deprecated_member_use
-      await Share.share(text, subject: '🚨 SafeLink Emergency Location Tracking');
+      final pos = currentPosition ?? await _locationService.getCurrentPosition();
+      final lat = pos?.latitude ?? -1.2825;
+      final lng = pos?.longitude ?? 36.8222;
+      final accuracy = pos?.accuracy ?? 15.0;
+
+      final backendBase = await AppConstants.getEffectiveBackendUrl();
+      final uri = Uri.parse('$backendBase/gps/share/start');
+
+      final res = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: jsonEncode({
+          'user_id': user.id,
+          'duration_hours': clampedDuration,
+          'latitude': lat,
+          'longitude': lng,
+          'accuracy_m': accuracy,
+          'is_emergency': isEmergency,
+          'activity_name': isEmergency ? '🚨 Emergency SOS Broadcast' : 'Real-Time Location Sharing',
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        sharingSessionToken = data['session_token'];
+        shareableLink = data['tracking_url'];
+        if (data['expires_at'] != null) {
+          sharingExpiresAt = DateTime.tryParse(data['expires_at']);
+        } else {
+          sharingExpiresAt = DateTime.now().add(Duration(hours: clampedDuration));
+        }
+
+        isSharingLocation = true;
+        _startPingTimer();
+        debugPrint('[LOCATION SHARING] Started: $shareableLink (Duration: ${clampedDuration}h)');
+      } else {
+        // Fallback local link if backend request failed
+        _generateFallbackLink(user.id, clampedDuration, lat, lng);
+      }
+    } catch (e) {
+      debugPrint('[LOCATION SHARING] Backend call error: $e. Using local fallback.');
+      final user = _supabaseService.currentUser;
+      if (user != null) {
+        _generateFallbackLink(user.id, clampedDuration, currentPosition?.latitude ?? -1.2825, currentPosition?.longitude ?? 36.8222);
+      }
+    } finally {
+      isStartingSharing = false;
+      notifyListeners();
+    }
+
+    return shareableLink;
+  }
+
+  void _generateFallbackLink(String userId, int duration, double lat, double lng) {
+    sharingDurationHours = duration;
+    sharingExpiresAt = DateTime.now().add(Duration(hours: duration));
+    isSharingLocation = true;
+    shareableLink = 'https://maps.google.com/search/?api=1&query=$lat,$lng';
+    _startPingTimer();
+  }
+
+  void _startPingTimer() {
+    _locationPingTimer?.cancel();
+    // Ping every 10 seconds for real-time tracking
+    _locationPingTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _pingCurrentLocation();
+    });
+  }
+
+  Future<void> _pingCurrentLocation() async {
+    if (!isSharingLocation) return;
+    if (sharingExpiresAt != null && DateTime.now().isAfter(sharingExpiresAt!)) {
+      cancelRealTimeLocationSharing();
+      return;
+    }
+
+    final user = _supabaseService.currentUser;
+    if (user == null) return;
+
+    try {
+      final pos = currentPosition ?? await _locationService.getCurrentPosition();
+      if (pos == null) return;
+
+      final backendBase = await AppConstants.getEffectiveBackendUrl();
+      final uri = Uri.parse('$backendBase/gps/ping');
+
+      await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+        body: jsonEncode({
+          'user_id': user.id,
+          'latitude': pos.latitude,
+          'longitude': pos.longitude,
+          'accuracy_m': pos.accuracy,
+          'speed': pos.speed,
+          'altitude': pos.altitude,
+          'session_token': sharingSessionToken,
+        }),
+      ).timeout(const Duration(seconds: 4));
+
+      // Also persist to Supabase
+      try {
+        await _supabaseService.client.from('realtime_gps_logs').insert({
+          'user_id': user.id,
+          'latitude': pos.latitude,
+          'longitude': pos.longitude,
+          'location_accuracy_m': pos.accuracy,
+          'speed_kmh': pos.speed,
+          'altitude_m': pos.altitude,
+          'recorded_at': DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    } catch (_) {}
+  }
+
+  /// Cancels active real-time location sharing immediately
+  Future<void> cancelRealTimeLocationSharing() async {
+    _locationPingTimer?.cancel();
+    _locationPingTimer = null;
+
+    final user = _supabaseService.currentUser;
+    final token = sharingSessionToken;
+
+    isSharingLocation = false;
+    shareableLink = null;
+    sharingSessionToken = null;
+    sharingExpiresAt = null;
+    notifyListeners();
+
+    if (user != null) {
+      try {
+        final backendBase = await AppConstants.getEffectiveBackendUrl();
+        final uri = Uri.parse('$backendBase/gps/share/stop');
+        await http.post(
+          uri,
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode({
+            'user_id': user.id,
+            'session_token': token,
+          }),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+  }
+
+  /// Checks if user already has an active sharing session upon launch
+  Future<void> checkActiveSharingSession() async {
+    final user = _supabaseService.currentUser;
+    if (user == null) return;
+
+    try {
+      final backendBase = await AppConstants.getEffectiveBackendUrl();
+      final uri = Uri.parse('$backendBase/gps/share/${user.id}/active');
+      final res = await http.get(uri, headers: {'ngrok-skip-browser-warning': 'true'}).timeout(const Duration(seconds: 4));
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        if (data['is_active'] == true) {
+          isSharingLocation = true;
+          sharingSessionToken = data['session_token'];
+          shareableLink = data['tracking_url'];
+          if (data['expires_at'] != null) {
+            sharingExpiresAt = DateTime.tryParse(data['expires_at']);
+          }
+          _startPingTimer();
+          notifyListeners();
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Opens the native sharing dialog to send tracking link via WhatsApp, SMS, etc.
+  Future<void> shareViaNativeSheet() async {
+    if (shareableLink == null) {
+      await startRealTimeLocationSharing(durationHours: sharingDurationHours);
+    }
+    if (shareableLink == null) return;
+
+    final msg = '🚨 SafeLink Live 3D Tracking: Follow my real-time location and safety status here:\n$shareableLink\n(Active for $remainingSharingTimeFormatted)';
+    try {
+      await SharePlus.instance.share(ShareParams(text: msg, subject: '🚨 SafeLink Live 3D Location Tracking'));
     } catch (e) {
       debugPrint('[MAP] Share error: $e');
     }
   }
 
-  void stopLocationSharing() {
-    isSharingLocation = false;
-    notifyListeners();
-  }
-
   @override
   void dispose() {
+    _locationPingTimer?.cancel();
     _positionStreamSub?.cancel();
     super.dispose();
   }

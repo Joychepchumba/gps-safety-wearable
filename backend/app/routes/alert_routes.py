@@ -74,14 +74,33 @@ async def process_alert(user_id: str, trigger_method: str, lat: float, lng: floa
         logger.error("[DB ERROR] Failed to insert panic_event: %s", e)
         raise HTTPException(status_code=500, detail=f"Database error inserting panic event: {e}")
     
+    # Automatically initialize 8-hour real-time location sharing session
+    tracking_url = None
+    session_token = None
+    try:
+        from app.routes.gps_routes import create_or_extend_session
+        session_token, tracking_url, _ = create_or_extend_session(
+            supabase=supabase,
+            user_id=user_id,
+            duration_hours=8,
+            is_emergency=True,
+            lat=lat,
+            lng=lng,
+            accuracy=accuracy,
+            activity_name="🚨 EMERGENCY DISTRESS"
+        )
+        logger.info("[LIVE 3D TRACKING] Created 8-hour tracking link for emergency: %s", tracking_url)
+    except Exception as te:
+        logger.warning("[LIVE 3D TRACKING NOTICE] Could not initialize session: %s", te)
+
     contacts_res = supabase.table("emergency_contacts").select("phone_number").eq("user_id", user_id).eq("consent_status", "accepted").execute()
     phones = [c["phone_number"] for c in contacts_res.data]
     
     sms_results = {}
     if phones:
-        sms_results = sms_service.notify_emergency_contacts(phones, user_name, lat, lng)
+        sms_results = sms_service.notify_emergency_contacts(phones, user_name, lat, lng, tracking_link=tracking_url)
     
-    police_res = sms_service.notify_police(user_name, lat, lng)
+    police_res = sms_service.notify_police(user_name, lat, lng, tracking_link=tracking_url)
     sms_results.update(police_res)
     
     supabase.table("panic_events").update({
@@ -125,7 +144,9 @@ async def process_alert(user_id: str, trigger_method: str, lat: float, lng: floa
         success=True,
         panic_event_id=event_id,
         sms_results=sms_results,
-        responders_alerted=len(responders)
+        responders_alerted=len(responders),
+        tracking_url=tracking_url,
+        session_token=session_token
     )
 
 class StatusUpdate(BaseModel):

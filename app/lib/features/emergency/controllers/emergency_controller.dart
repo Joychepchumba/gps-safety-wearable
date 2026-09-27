@@ -25,6 +25,12 @@ class EmergencyController extends ChangeNotifier {
   PanicEventModel? activeEvent;
   Timer? _countdownTimer;
 
+  // Real-Time 3D Location Sharing during Emergency (Default 8 Hours)
+  String? activeTrackingUrl;
+  String? activeSessionToken;
+  bool isSharingLocation = false;
+  Timer? _emergencyPingTimer;
+
   final SupabaseService _supabaseService = sl<SupabaseService>();
   final LocationService _locationService = sl<LocationService>();
 
@@ -210,12 +216,47 @@ class EmergencyController extends ChangeNotifier {
           debugPrint('[BACKEND SUCCESS] Alert processed by backend: ${backendRes.body}');
           final data = jsonDecode(backendRes.body);
           panicEventId = data['panic_event_id'];
+          activeTrackingUrl = data['tracking_url'];
+          activeSessionToken = data['session_token'];
+          if (activeTrackingUrl != null) {
+            isSharingLocation = true;
+          }
         } else {
           debugPrint('[BACKEND NOTICE] Backend returned status ${backendRes.statusCode}: ${backendRes.body}');
         }
       } catch (backendError) {
         debugPrint('[BACKEND NOTICE] Direct backend call failed: $backendError, falling back to direct Supabase');
       }
+
+      // If tracking url was not returned, start an 8-hour session directly
+      if (activeTrackingUrl == null) {
+        try {
+          final baseUrl = await AppConstants.getEffectiveBackendUrl();
+          final shareUri = Uri.parse('$baseUrl/gps/share/start');
+          final shareRes = await http.post(
+            shareUri,
+            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+            body: jsonEncode({
+              'user_id': user.id,
+              'duration_hours': 8,
+              'latitude': lat,
+              'longitude': lng,
+              'accuracy_m': accuracy,
+              'is_emergency': true,
+              'activity_name': '🚨 EMERGENCY SOS',
+            }),
+          ).timeout(const Duration(seconds: 4));
+          if (shareRes.statusCode == 200) {
+            final sData = jsonDecode(shareRes.body);
+            activeTrackingUrl = sData['tracking_url'];
+            activeSessionToken = sData['session_token'];
+            isSharingLocation = true;
+          }
+        } catch (_) {}
+      }
+
+      // Start periodic 8-second GPS ping loop to update the 3D Mapbox tracking page in real-time
+      _startEmergencyPingTimer(user.id);
 
       // 4. Complete panic event model
       if (panicEventId != null) {
@@ -310,6 +351,12 @@ class EmergencyController extends ChangeNotifier {
 
   Future<void> resolveAlert(String panicEventId) async {
     _stopVibration();
+    _emergencyPingTimer?.cancel();
+    _emergencyPingTimer = null;
+    isSharingLocation = false;
+    activeTrackingUrl = null;
+    activeSessionToken = null;
+
     try {
       await _supabaseService.client
           .from('panic_events')
@@ -324,6 +371,59 @@ class EmergencyController extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       debugPrint('Error resolving alert: $e');
+    }
+  }
+
+  void _startEmergencyPingTimer(String userId) {
+    _emergencyPingTimer?.cancel();
+    _emergencyPingTimer = Timer.periodic(const Duration(seconds: 8), (_) async {
+      if (state != EmergencyState.sent || !isSharingLocation) {
+        _emergencyPingTimer?.cancel();
+        return;
+      }
+      try {
+        final pos = await _locationService.getCurrentPosition();
+        if (pos != null) {
+          final baseUrl = await AppConstants.getEffectiveBackendUrl();
+          final pingUri = Uri.parse('$baseUrl/gps/ping');
+          await http.post(
+            pingUri,
+            headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+            body: jsonEncode({
+              'user_id': userId,
+              'latitude': pos.latitude,
+              'longitude': pos.longitude,
+              'accuracy_m': pos.accuracy,
+              'speed': pos.speed,
+              'altitude': pos.altitude,
+              'session_token': activeSessionToken,
+            }),
+          ).timeout(const Duration(seconds: 4));
+        }
+      } catch (_) {}
+    });
+  }
+
+  Future<void> cancelRealTimeSharing() async {
+    isSharingLocation = false;
+    _emergencyPingTimer?.cancel();
+    _emergencyPingTimer = null;
+    notifyListeners();
+
+    final user = _supabaseService.client.auth.currentUser;
+    if (user != null) {
+      try {
+        final baseUrl = await AppConstants.getEffectiveBackendUrl();
+        final stopUri = Uri.parse('$baseUrl/gps/share/stop');
+        await http.post(
+          stopUri,
+          headers: {'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true'},
+          body: jsonEncode({
+            'user_id': user.id,
+            'session_token': activeSessionToken,
+          }),
+        ).timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
   }
 

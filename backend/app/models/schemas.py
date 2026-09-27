@@ -29,6 +29,36 @@ class AlertResponse(BaseModel):
     panic_event_id: Optional[str] = None
     sms_results: Optional[dict] = None
     responders_alerted: Optional[int] = 0
+    tracking_url: Optional[str] = None
+    session_token: Optional[str] = None
+
+class LocationSharingRequest(BaseModel):
+    user_id: str
+    duration_hours: int = Field(8, ge=1, le=24, description="Sharing duration in hours (1-24)")
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    accuracy_m: Optional[float] = None
+    is_emergency: bool = False
+    activity_name: Optional[str] = "Location Sharing"
+
+class LocationSharingResponse(BaseModel):
+    success: bool
+    session_id: Optional[str] = None
+    session_token: str
+    tracking_url: str
+    expires_at: str
+    duration_hours: int
+    is_emergency: bool = False
+
+class LocationPingRequest(BaseModel):
+    user_id: str
+    latitude: float
+    longitude: float
+    accuracy_m: Optional[float] = None
+    speed: Optional[float] = None
+    altitude: Optional[float] = None
+    session_token: Optional[str] = None
+    battery_level: Optional[int] = None
 
 class UserRequest(BaseModel):
     user_id: str

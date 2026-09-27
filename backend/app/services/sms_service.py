@@ -46,12 +46,12 @@ class SmsService:
             
         return results
 
-    def notify_emergency_contacts(self, phones: list[str], user_name: str, lat: float, lng: float):
-        map_link = f"https://maps.google.com/?q={lat},{lng}"
-        message = f"EMERGENCY: {user_name} has triggered a panic alert! Location: {map_link}"
+    def notify_emergency_contacts(self, phones: list[str], user_name: str, lat: float, lng: float, tracking_link: str = None):
+        link_str = tracking_link if tracking_link else f"https://maps.google.com/?q={lat},{lng}"
+        message = f"EMERGENCY SOS: {user_name} triggered a panic alert! Track live in 3D: {link_str} | GPS: {lat:.5f},{lng:.5f}"
         return self.send_sms(phones, message)
 
-    def notify_police(self, user_name: str, lat: float, lng: float):
-        map_link = f"https://maps.google.com/?q={lat},{lng}"
-        message = f"EMERGENCY ALERT: {user_name} needs police assistance. Location: {map_link}"
+    def notify_police(self, user_name: str, lat: float, lng: float, tracking_link: str = None):
+        link_str = tracking_link if tracking_link else f"https://maps.google.com/?q={lat},{lng}"
+        message = f"EMERGENCY ALERT: {user_name} needs police assistance. Track live: {link_str} | GPS: {lat:.5f},{lng:.5f}"
         return self.send_sms([self.police_number], message)

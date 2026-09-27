@@ -13,7 +13,7 @@ if backend_env.exists():
 elif root_env.exists():
     load_dotenv(root_env)
 
-from app.routes import alert_routes, user_routes, responder_routes
+from app.routes import alert_routes, user_routes, responder_routes, gps_routes
 from app.core.ngrok_sync import run_auto_sync
 
 logging.basicConfig(level=logging.INFO)
@@ -32,6 +32,7 @@ app.add_middleware(
 app.include_router(alert_routes.router)
 app.include_router(user_routes.router)
 app.include_router(responder_routes.router)
+app.include_router(gps_routes.router)
 
 @app.on_event("startup")
 async def startup_event():
