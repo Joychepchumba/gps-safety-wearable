@@ -13,6 +13,7 @@ import 'features/contacts/controllers/contacts_controller.dart';
 import 'features/map/controllers/map_controller.dart';
 import 'features/wearable/controllers/wearable_controller.dart';
 import 'features/alerts/controllers/alert_controller.dart';
+import 'features/community/controllers/community_alert_controller.dart';
 
 import 'features/auth/screens/splash_screen.dart';
 import 'features/auth/screens/login_screen.dart';
@@ -54,6 +55,7 @@ class SafeGuardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => sl<MapController>()),
         ChangeNotifierProvider(create: (_) => sl<WearableController>()),
         ChangeNotifierProvider(create: (_) => sl<AlertController>()),
+        ChangeNotifierProvider(create: (_) => sl<CommunityAlertController>()),
       ],
       child: MaterialApp(
         title: 'SafeLink',

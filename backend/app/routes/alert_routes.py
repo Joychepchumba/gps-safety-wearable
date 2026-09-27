@@ -89,23 +89,37 @@ async def process_alert(user_id: str, trigger_method: str, lat: float, lng: floa
         "hotline_notified": True
     }).eq("id", event_id).execute()
     
-    responders = find_nearby_responders(supabase, lat, lng, 1000.0)
+    # 3. Community Responders within 2 km (2000m)
+    responders = find_nearby_responders(supabase, lat, lng, 2000.0)
+    # Exclude the person triggering the alert if they are also a registered responder
+    responders = [r for r in responders if r["id"] != user_id]
     
-    tokens = [r["push_token"] for r in responders if r.get("push_token")]
-    if tokens:
-        await push_service.notify_responders(tokens, user_name, lat, lng)
-        
+    if responders:
         alerts_to_insert = [{
             "panic_event_id": event_id,
             "responder_id": r["id"],
             "distance_m": r.get("distance_m")
         } for r in responders]
         
-        supabase.table("responder_alerts").insert(alerts_to_insert).execute()
-        
-        supabase.table("panic_events").update({
-            "community_responders_alerted": len(responders)
-        }).eq("id", event_id).execute()
+        try:
+            supabase.table("responder_alerts").upsert(
+                alerts_to_insert,
+                on_conflict="panic_event_id,responder_id"
+            ).execute()
+            supabase.table("panic_events").update({
+                "community_responders_alerted": len(responders)
+            }).eq("id", event_id).execute()
+            logger.info("[COMMUNITY ALERT SUCCESS] Alerted %d community responders within 2km", len(responders))
+        except Exception as re:
+            logger.error("[COMMUNITY ALERT NOTICE] Could not save responder_alerts: %s", re)
+            
+    # Push notification dispatch if FCM tokens available
+    tokens = [r["push_token"] for r in responders if r.get("push_token")]
+    if tokens:
+        try:
+            await push_service.notify_responders(tokens, user_name, lat, lng)
+        except Exception as pe:
+            logger.error("[PUSH NOTICE] Push delivery error: %s", pe)
     
     return AlertResponse(
         success=True,

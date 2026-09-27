@@ -8,6 +8,8 @@ import '../../../core/constants/app_colors.dart';
 import '../controllers/map_controller.dart';
 import '../models/police_station_model.dart';
 import '../models/danger_zone_model.dart';
+import '../../community/controllers/community_alert_controller.dart';
+import '../../community/widgets/community_alert_dialog.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -42,6 +44,7 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<MapController>();
+    final communityCtrl = context.watch<CommunityAlertController>();
     final userPos = controller.currentPosition;
     final userLatLng = userPos != null
         ? LatLng(userPos.latitude, userPos.longitude)
@@ -104,26 +107,65 @@ class _MapScreenState extends State<MapScreen> {
               ),
 
               // Danger Zone Geofence Circle Overlays
-              if (showDanger)
-                CircleLayer(
-                  circles: controller.dangerZones.map((zone) {
-                    final isInside = zone.id == insideZone?.id;
+              CircleLayer(
+                circles: [
+                  if (showDanger)
+                    ...controller.dangerZones.map((zone) {
+                      final isInside = zone.id == insideZone?.id;
+                      return CircleMarker(
+                        point: LatLng(zone.latitude, zone.longitude),
+                        color: isInside
+                            ? AppColors.sosRed.withValues(alpha: 0.35)
+                            : AppColors.warning.withValues(alpha: 0.22),
+                        borderColor: isInside ? AppColors.sosRed : AppColors.warning,
+                        borderStrokeWidth: isInside ? 2.5 : 1.5,
+                        useRadiusInMeter: true,
+                        radius: zone.radiusMeters,
+                      );
+                    }),
+
+                  // Active Community Distress Emergency Beacons (Within 2 km)
+                  ...communityCtrl.activeAlerts.map((alert) {
                     return CircleMarker(
-                      point: LatLng(zone.latitude, zone.longitude),
-                      color: isInside
-                          ? AppColors.sosRed.withValues(alpha: 0.35)
-                          : AppColors.warning.withValues(alpha: 0.22),
-                      borderColor: isInside ? AppColors.sosRed : AppColors.warning,
-                      borderStrokeWidth: isInside ? 2.5 : 1.5,
+                      point: LatLng(alert.latitude, alert.longitude),
+                      color: AppColors.sosRed.withValues(alpha: 0.28),
+                      borderColor: AppColors.sosRed,
+                      borderStrokeWidth: 2.5,
                       useRadiusInMeter: true,
-                      radius: zone.radiusMeters,
+                      radius: 120.0,
                     );
-                  }).toList(),
-                ),
+                  }),
+                ],
+              ),
 
               // Markers Layer
               MarkerLayer(
                 markers: [
+                  // Active Community Distress Pins (Within 2 km)
+                  ...communityCtrl.activeAlerts.map((alert) {
+                    return Marker(
+                      point: LatLng(alert.latitude, alert.longitude),
+                      width: 54,
+                      height: 54,
+                      child: GestureDetector(
+                        onTap: () => CommunityAlertDialog.show(context, alert, communityCtrl),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.sosRed,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2.5),
+                            boxShadow: const [
+                              BoxShadow(color: Colors.black45, blurRadius: 10, offset: Offset(0, 4)),
+                            ],
+                          ),
+                          child: const Center(
+                            child: Icon(Icons.warning_amber_rounded, color: Colors.white, size: 28),
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
                   // User GPS location marker
                   Marker(
                     point: userLatLng,
@@ -286,6 +328,65 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+
+          // 3b. Active Community Distress Emergency Banner (Within 2 km)
+          if (communityCtrl.activeAlerts.isNotEmpty)
+            Positioned(
+              top: insideZone != null ? 140 : 66,
+              left: 16,
+              right: 16,
+              child: GestureDetector(
+                onTap: () => CommunityAlertDialog.show(
+                  context,
+                  communityCtrl.activeAlerts.first,
+                  communityCtrl,
+                ),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.sosRed,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(color: Colors.black45, blurRadius: 12, offset: Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '🚨 DISTRESS NEARBY: ${communityCtrl.activeAlerts.first.userName.toUpperCase()}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${communityCtrl.activeAlerts.first.formattedDistance} • Tap to view location & navigate',
+                              style: const TextStyle(color: Colors.white, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+                    ],
+                  ),
                 ),
               ),
             ),

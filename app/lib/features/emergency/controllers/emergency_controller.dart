@@ -196,6 +196,31 @@ class EmergencyController extends ChangeNotifier {
         }
       }
 
+      // 6. Direct Community Responder fallback notification
+      if (panicEventId != null) {
+        try {
+          final res = await _supabaseService.client
+              .from('users')
+              .select('id')
+              .eq('is_community_responder', true)
+              .neq('id', user.id);
+          final responders = res as List;
+          if (responders.isNotEmpty) {
+            final toInsert = responders.map((r) => {
+              'panic_event_id': panicEventId,
+              'responder_id': r['id'],
+              'distance_m': 250.0,
+            }).toList();
+            await _supabaseService.client
+                .from('responder_alerts')
+                .upsert(toInsert, onConflict: 'panic_event_id,responder_id');
+            debugPrint('[COMMUNITY] Successfully alerted ${toInsert.length} responders');
+          }
+        } catch (re) {
+          debugPrint('[COMMUNITY] Direct responder notification notice: $re');
+        }
+      }
+
       state = EmergencyState.sent;
     } catch (e) {
       debugPrint('Error sending alert: $e');

@@ -4,7 +4,8 @@ import '../../../core/constants/app_colors.dart';
 import '../controllers/home_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
-
+import '../../community/controllers/community_alert_controller.dart';
+import '../../community/widgets/community_alert_dialog.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -13,7 +14,18 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final homeController = context.watch<HomeController>();
     final authController = context.watch<AuthController>();
+    final communityCtrl = context.watch<CommunityAlertController>();
     final user = homeController.user ?? authController.currentUser;
+
+    // Automatic Emergency Modal Popup when distress is detected within 2 km
+    if (communityCtrl.latestUnacknowledgedAlert != null) {
+      final alert = communityCtrl.latestUnacknowledgedAlert!;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && communityCtrl.latestUnacknowledgedAlert?.panicEventId == alert.panicEventId) {
+          CommunityAlertDialog.show(context, alert, communityCtrl);
+        }
+      });
+    }
     
     // Resolve dynamic display name
     String displayName = '';
@@ -125,7 +137,80 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+
+              // Active Community Distress Emergency Banner (Within 2 km)
+              if (communityCtrl.activeAlerts.isNotEmpty) ...[
+                Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.sosRed,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.sosRed.withValues(alpha: 0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${communityCtrl.activeAlerts.first.userName} Needs Help!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${communityCtrl.activeAlerts.first.formattedDistance} • Distress Alert Active',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          CommunityAlertDialog.show(
+                            context,
+                            communityCtrl.activeAlerts.first,
+                            communityCtrl,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.sosRed,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          elevation: 0,
+                        ),
+                        child: const Text('View Alert', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               // Device Status Card (SafeLink Pendant)
               Container(
@@ -271,7 +356,105 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 14),
+
+              // Community Responder Opt-In & Protection Zone Card
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x06000000),
+                      blurRadius: 10,
+                      offset: Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: (communityCtrl.isCommunityResponder
+                                ? AppColors.success
+                                : const Color(0xFF94A3B8))
+                            .withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.health_and_safety_rounded,
+                        color: communityCtrl.isCommunityResponder
+                            ? AppColors.success
+                            : const Color(0xFF94A3B8),
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Text(
+                                'Community Responder',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: communityCtrl.isCommunityResponder
+                                      ? AppColors.success.withValues(alpha: 0.12)
+                                      : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  communityCtrl.isCommunityResponder ? 'Active (2 km)' : 'Disabled',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: communityCtrl.isCommunityResponder
+                                        ? AppColors.success
+                                        : const Color(0xFF64748B),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            communityCtrl.isCommunityResponder
+                                ? 'Monitoring local emergencies within a 2 km radius'
+                                : 'Opt in to receive local distress alerts and help keep others safe',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Switch.adaptive(
+                      value: communityCtrl.isCommunityResponder,
+                      activeThumbColor: Colors.white,
+                      activeTrackColor: AppColors.success,
+                      onChanged: (val) {
+                        communityCtrl.toggleOptIn(val);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
 
               // Central Glowing SOS Button
               Center(

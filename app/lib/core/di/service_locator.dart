@@ -12,6 +12,7 @@ import '../../features/contacts/controllers/contacts_controller.dart';
 import '../../features/map/controllers/map_controller.dart';
 import '../../features/wearable/controllers/wearable_controller.dart';
 import '../../features/alerts/controllers/alert_controller.dart';
+import '../../features/community/controllers/community_alert_controller.dart';
 
 final sl = GetIt.instance;
 
@@ -54,5 +55,8 @@ Future<void> setupServiceLocator() async {
   }
   if (!sl.isRegistered<AlertController>()) {
     sl.registerFactory(() => AlertController());
+  }
+  if (!sl.isRegistered<CommunityAlertController>()) {
+    sl.registerLazySingleton(() => CommunityAlertController());
   }
 }
