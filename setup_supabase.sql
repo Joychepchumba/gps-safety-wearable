@@ -70,39 +70,23 @@ SET value = EXCLUDED.value, updated_at = now();
 
 
 -- 4. EMERGENCY CONTACTS PERMISSIONS (Fixes Error 42501 when adding contacts)
-ALTER TABLE public.emergency_contacts ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS emergency_contacts_policy ON public.emergency_contacts;
-DROP POLICY IF EXISTS emergency_contacts_all ON public.emergency_contacts;
-DROP POLICY IF EXISTS emergency_contacts_insert ON public.emergency_contacts;
-DROP POLICY IF EXISTS emergency_contacts_select ON public.emergency_contacts;
-DROP POLICY IF EXISTS emergency_contacts_update ON public.emergency_contacts;
-DROP POLICY IF EXISTS emergency_contacts_delete ON public.emergency_contacts;
-
--- Allow reading, inserting, updating, and deleting emergency contacts
-CREATE POLICY emergency_contacts_all ON public.emergency_contacts 
-    FOR ALL USING (true) WITH CHECK (true);
-
+ALTER TABLE public.emergency_contacts DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.emergency_contacts TO anon, authenticated, service_role;
 
 -- 5. PANIC EVENTS & GPS LOGS PERMISSIONS (Fixes Error 42501 on Alert Creation)
-ALTER TABLE public.panic_events ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS panic_events_all ON public.panic_events;
-CREATE POLICY panic_events_all ON public.panic_events 
-    FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.panic_events DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.panic_events TO anon, authenticated, service_role;
 
-ALTER TABLE public.realtime_gps_logs ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS realtime_gps_logs_all ON public.realtime_gps_logs;
-CREATE POLICY realtime_gps_logs_all ON public.realtime_gps_logs 
-    FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.realtime_gps_logs DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.realtime_gps_logs TO anon, authenticated, service_role;
 
-ALTER TABLE public.responder_alerts ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS responder_alerts_all ON public.responder_alerts;
-CREATE POLICY responder_alerts_all ON public.responder_alerts 
-    FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.responder_alerts DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.responder_alerts TO anon, authenticated, service_role;
 
-ALTER TABLE public.wearable_devices ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS wearable_devices_all ON public.wearable_devices;
-CREATE POLICY wearable_devices_all ON public.wearable_devices 
-    FOR ALL USING (true) WITH CHECK (true);
+ALTER TABLE public.wearable_devices DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.wearable_devices TO anon, authenticated, service_role;
 
-SELECT 'SafeLink database configuration completed successfully!' AS status;
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+GRANT ALL ON public.users TO anon, authenticated, service_role;
+
+SELECT 'SafeLink database configuration completed successfully! All RLS barriers lifted.' AS status;

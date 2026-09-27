@@ -30,6 +30,14 @@ class SupabaseService {
     );
   }
 
+  /// Resend Email Confirmation Link
+  Future<void> resendEmailConfirmation(String email) async {
+    await _client.auth.resend(
+      type: OtpType.signup,
+      email: email.trim(),
+    );
+  }
+
   /// Sign Up with Profile Metadata (Full Name, Phone, Community Responder, Emergency Duress Password)
   Future<AuthResponse> signUp({
     required String email,

@@ -35,12 +35,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
-  void _submit(AuthController authController) {
+  void _submit(AuthController authController) async {
     if (_formKey.currentState?.validate() ?? false) {
-      authController.register(
+      final email = _emailController.text.trim();
+      final success = await authController.register(
         fullName: _nameController.text.trim(),
         phone: _phoneController.text.trim(),
-        email: _emailController.text.trim(),
+        email: email,
         password: _passwordController.text,
         isCommunityResponder: _isCommunityResponder,
         emergencyPassword: _emergencyPasswordController.text.trim().isNotEmpty
@@ -48,7 +49,121 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : null,
         ctx: context,
       );
+
+      if (success && mounted) {
+        _showEmailConfirmationDialog(context, email);
+      }
     }
+  }
+
+  void _showEmailConfirmationDialog(BuildContext context, String email) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.mark_email_read_rounded,
+                  color: AppColors.primary,
+                  size: 38,
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Confirm Your Email',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              RichText(
+                textAlign: TextAlign.center,
+                text: TextSpan(
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                    height: 1.45,
+                  ),
+                  children: [
+                    const TextSpan(text: 'We sent a verification link to:\n'),
+                    TextSpan(
+                      text: email,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const TextSpan(
+                      text: '\n\nPlease tap the link in your email to activate your account, then proceed to log in.',
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogCtx).pop();
+                  Navigator.of(context).pushReplacementNamed('/login');
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  minimumSize: const Size.fromHeight(50),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Proceed to Login',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () async {
+                  await context.read<AuthController>().resendEmailConfirmation(email);
+                  if (dialogCtx.mounted) {
+                    ScaffoldMessenger.of(dialogCtx).showSnackBar(
+                      const SnackBar(
+                        content: Text('A fresh confirmation link was sent to your email.'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                },
+                child: const Text(
+                  'Didn\'t receive it? Resend Email',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override

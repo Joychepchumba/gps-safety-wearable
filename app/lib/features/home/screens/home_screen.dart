@@ -14,7 +14,31 @@ class HomeScreen extends StatelessWidget {
     final homeController = context.watch<HomeController>();
     final authController = context.watch<AuthController>();
     final user = homeController.user ?? authController.currentUser;
-    final displayName = user?.fullName.isNotEmpty == true ? user!.fullName.split(' ').first : 'Joy';
+    
+    // Resolve dynamic display name
+    String displayName = '';
+    if (user != null && user.fullName.trim().isNotEmpty) {
+      displayName = user.fullName.trim().split(' ').first;
+    } else {
+      final metaName = authController.currentUser?.fullName;
+      if (metaName != null && metaName.trim().isNotEmpty) {
+        displayName = metaName.trim().split(' ').first;
+      } else {
+        final email = user?.email ?? '';
+        if (email.contains('@')) {
+          final prefix = email.split('@').first;
+          displayName = prefix.isNotEmpty ? (prefix[0].toUpperCase() + prefix.substring(1)) : 'User';
+        } else {
+          displayName = 'User';
+        }
+      }
+    }
+
+    // Dynamic time-of-day greeting
+    final hour = DateTime.now().hour;
+    final String greeting = hour < 12
+        ? 'Good morning,'
+        : (hour < 17 ? 'Good afternoon,' : 'Good evening,');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -31,9 +55,9 @@ class HomeScreen extends StatelessWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Good morning,',
-                        style: TextStyle(
+                      Text(
+                        greeting,
+                        style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,

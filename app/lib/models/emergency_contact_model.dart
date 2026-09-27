@@ -23,15 +23,15 @@ class EmergencyContactModel {
 
   factory EmergencyContactModel.fromJson(Map<String, dynamic> json) {
     return EmergencyContactModel(
-      id: json['id'],
-      userId: json['user_id'],
-      contactName: json['contact_name'],
-      phoneNumber: json['phone_number'],
-      email: json['email'],
-      consentStatus: json['consent_status'] ?? 'pending',
-      consentedAt: json['consented_at'] != null ? DateTime.parse(json['consented_at']) : null,
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      id: json['id']?.toString() ?? '',
+      userId: json['user_id']?.toString() ?? '',
+      contactName: json['contact_name']?.toString() ?? 'Emergency Contact',
+      phoneNumber: json['phone_number']?.toString() ?? '',
+      email: json['email']?.toString(),
+      consentStatus: json['consent_status']?.toString() ?? 'pending',
+      consentedAt: json['consented_at'] != null ? DateTime.tryParse(json['consented_at'].toString()) : null,
+      createdAt: json['created_at'] != null ? (DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now()) : DateTime.now(),
+      updatedAt: json['updated_at'] != null ? (DateTime.tryParse(json['updated_at'].toString()) ?? DateTime.now()) : DateTime.now(),
     );
   }
 

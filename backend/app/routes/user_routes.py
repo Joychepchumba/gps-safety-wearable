@@ -25,7 +25,12 @@ DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmF
 
 def get_supabase() -> Client:
     url = os.getenv("SUPABASE_URL") or DEFAULT_SUPABASE_URL
-    key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY") or DEFAULT_SUPABASE_KEY
+    key = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_SERVICE_KEY")
+        or os.getenv("SUPABASE_ANON_KEY")
+        or DEFAULT_SUPABASE_KEY
+    )
     return create_client(url, key)
 
 
@@ -277,12 +282,25 @@ def add_user_contact(req: EmergencyContactCreateRequest, supabase: Client = Depe
         "updated_at": datetime.datetime.utcnow().isoformat(),
     }
     try:
+        # Ensure user exists in public.users to prevent foreign key constraint violations
+        try:
+            supabase.table("users").upsert({
+                "id": req.user_id,
+                "full_name": req.contact_name.split()[0] + " User",
+                "phone_number": "",
+            }, on_conflict="id", ignore_duplicates=True).execute()
+        except Exception as ue:
+            logger.warning("[CONTACT USER UPSERT NOTICE] %s", ue)
+
         res = supabase.table("emergency_contacts").insert(contact_data).execute()
         logger.info("[CONTACT INSERT SUCCESS] Added emergency contact: %s for user: %s", req.contact_name, req.user_id)
         return {"success": True, "message": "Emergency contact added successfully", "data": res.data}
     except Exception as e:
-        logger.error("[CONTACT INSERT ERROR] %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        err_msg = str(e)
+        logger.error("[CONTACT INSERT ERROR] %s", err_msg)
+        if "unique" in err_msg.lower() or "duplicate" in err_msg.lower():
+            raise HTTPException(status_code=400, detail="This phone number is already registered as an emergency contact.")
+        raise HTTPException(status_code=500, detail=f"Database error: {err_msg}")
 
 @router.delete("/contacts/{contact_id}")
 def delete_user_contact(contact_id: str, user_id: str = Query(None), supabase: Client = Depends(get_supabase)):

@@ -20,9 +20,10 @@ class _MapScreenState extends State<MapScreen> {
   final fmap.MapController _mapUiController = fmap.MapController();
   String _activeFilter = 'all'; // 'all', 'police', 'danger', 'responders'
   bool _showBottomDetails = true;
+  bool _hasCenteredOnUser = false;
 
-  void _recenterMap(double lat, double lng) {
-    _mapUiController.move(LatLng(lat, lng), 15.0);
+  void _recenterMap(double lat, double lng, {double zoom = 16.5}) {
+    _mapUiController.move(LatLng(lat, lng), zoom);
   }
 
   void _callPolice(String phone) async {
@@ -45,6 +46,16 @@ class _MapScreenState extends State<MapScreen> {
     final userLatLng = userPos != null
         ? LatLng(userPos.latitude, userPos.longitude)
         : const LatLng(-1.2825, 36.8222);
+
+    // Auto-focus and zoom to user's location when GPS is available
+    if (userPos != null && !_hasCenteredOnUser) {
+      _hasCenteredOnUser = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _recenterMap(userPos.latitude, userPos.longitude, zoom: 16.5);
+        }
+      });
+    }
 
     final nearestPolice = controller.nearestPoliceStation;
     final insideZone = controller.activeDangerZoneWarning;
@@ -82,7 +93,7 @@ class _MapScreenState extends State<MapScreen> {
             mapController: _mapUiController,
             options: MapOptions(
               initialCenter: userLatLng,
-              initialZoom: 14.5,
+              initialZoom: 16.5,
               minZoom: 4.0,
               maxZoom: 19.0,
             ),

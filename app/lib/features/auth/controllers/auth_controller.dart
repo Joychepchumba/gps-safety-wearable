@@ -241,7 +241,7 @@ class AuthController extends ChangeNotifier {
   }
 
   /// User Registration with optional Community Responder opt-in and Duress Password
-  Future<void> register({
+  Future<bool> register({
     required String fullName,
     required String phone,
     required String email,
@@ -281,7 +281,7 @@ class AuthController extends ChangeNotifier {
       }
 
       // 2. Register with Supabase
-      final response = await _supabaseService.signUp(
+      await _supabaseService.signUp(
         email: email,
         password: password,
         fullName: fullName,
@@ -290,22 +290,25 @@ class AuthController extends ChangeNotifier {
         emergencyPassword: emergencyPassword,
       );
 
-      if (response.user != null) {
-        currentUser = await _supabaseService.fetchUserProfile(response.user!.id);
-      }
-      _status = AuthStatus.authenticated;
+      _status = AuthStatus.unauthenticated;
       notifyListeners();
-
-      if (ctx.mounted) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Account registered successfully! Welcome.')),
-        );
-        Navigator.of(ctx).pushReplacementNamed('/home');
-      }
+      return true;
     } catch (e) {
       errorMessage = _formatErrorMessage(e);
       _status = AuthStatus.error;
       notifyListeners();
+      return false;
+    }
+  }
+
+  /// Resend confirmation email
+  Future<bool> resendEmailConfirmation(String email) async {
+    try {
+      await _supabaseService.resendEmailConfirmation(email);
+      return true;
+    } catch (e) {
+      debugPrint('[AUTH] Resend error: $e');
+      return false;
     }
   }
 
