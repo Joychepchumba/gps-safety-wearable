@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
@@ -30,25 +31,44 @@ class VoiceActivationService {
     _isEnabled = prefs.getBool('voice_activation_enabled') ?? false;
     _wakePhrase = prefs.getString('voice_wake_word') ?? 'tuma msaada';
 
+    if (_isEnabled) {
+      await _initSpeech();
+      if (_isInitialized) {
+        startListening();
+      }
+    }
+  }
+
+  Future<bool> _initSpeech() async {
+    if (_isInitialized) return true;
+
     try {
+      final micStatus = await Permission.microphone.status;
+      if (!micStatus.isGranted) {
+        final res = await Permission.microphone.request();
+        if (!res.isGranted) {
+          debugPrint('[VOICE] Microphone permission denied by user');
+          return false;
+        }
+      }
+
       _isInitialized = await _speech.initialize(
-        onError: (val) => debugPrint('[VOICE] Speech error: $val'),
+        onError: (val) => debugPrint('[VOICE] Speech engine error: $val'),
         onStatus: (val) {
+          debugPrint('[VOICE] Status: $val');
           if (val == 'done' || val == 'notListening') {
             _isListening = false;
             // Auto restart if still enabled
             if (_isEnabled) {
-              Future.delayed(const Duration(milliseconds: 500), () => startListening());
+              Future.delayed(const Duration(milliseconds: 600), () => startListening());
             }
           }
         },
       );
-
-      if (_isEnabled && _isInitialized) {
-        startListening();
-      }
+      return _isInitialized;
     } catch (e) {
-      debugPrint('[VOICE] Init error: $e');
+      debugPrint('[VOICE] Init exception: $e');
+      return false;
     }
   }
 
@@ -61,17 +81,22 @@ class VoiceActivationService {
     await prefs.setString('voice_wake_word', _wakePhrase);
 
     if (enabled) {
+      await _initSpeech();
       startListening();
     } else {
       stopListening();
     }
   }
 
-  void startListening() {
-    if (!_isInitialized || _isListening) return;
+  Future<void> startListening() async {
+    if (!_isInitialized) {
+      final ready = await _initSpeech();
+      if (!ready) return;
+    }
+    if (_isListening) return;
 
     try {
-      _speech.listen(
+      await _speech.listen(
         onResult: (result) {
           final words = result.recognizedWords.toLowerCase();
           debugPrint('[VOICE] Heard: "$words" (target: "$_wakePhrase")');
@@ -90,7 +115,7 @@ class VoiceActivationService {
         ),
       );
       _isListening = true;
-      debugPrint('[VOICE] Listening for wake phrase: "$_wakePhrase"');
+      debugPrint('[VOICE] Actively listening for wake phrase: "$_wakePhrase"');
     } catch (e) {
       debugPrint('[VOICE] Listen error: $e');
     }

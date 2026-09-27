@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/voice_activation_service.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -56,11 +57,39 @@ class _VoiceActivationScreenState extends State<VoiceActivationScreen>
       return;
     }
 
-    final available = await _testSpeech.initialize();
+    final micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted) {
+      final req = await Permission.microphone.request();
+      if (!req.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission is required to listen for wake phrase.'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    final available = await _testSpeech.initialize(
+      onError: (val) {
+        debugPrint('[VOICE TEST] Error: $val');
+        if (mounted) {
+          setState(() {
+            _isTesting = false;
+            _heardText = 'Microphone notice: ${val.errorMsg}';
+          });
+          _pulseController.stop();
+        }
+      },
+    );
+
     if (available) {
       setState(() {
         _isTesting = true;
-        _heardText = 'Listening... Say your wake phrase.';
+        _heardText = 'Listening... Speak your phrase clearly.';
       });
       _pulseController.repeat(reverse: true);
 
@@ -69,7 +98,9 @@ class _VoiceActivationScreenState extends State<VoiceActivationScreen>
           setState(() {
             _heardText = result.recognizedWords;
           });
-          if (result.recognizedWords.toLowerCase().contains(_phraseController.text.trim().toLowerCase())) {
+          final target = _phraseController.text.trim().toLowerCase();
+          final heard = result.recognizedWords.toLowerCase();
+          if (heard.contains(target) || _matchesPhrase(heard, target)) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('🎉 Wake phrase recognized successfully!'),
@@ -78,8 +109,31 @@ class _VoiceActivationScreenState extends State<VoiceActivationScreen>
             );
           }
         },
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.confirmation,
+          partialResults: true,
+          cancelOnError: false,
+        ),
       );
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Speech recognition is not available or disabled on this device.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
+  }
+
+  bool _matchesPhrase(String heard, String target) {
+    final targets = target.split(' ');
+    int matched = 0;
+    for (final t in targets) {
+      if (t.isNotEmpty && heard.contains(t)) matched++;
+    }
+    return matched >= targets.length && targets.isNotEmpty;
   }
 
   Future<void> _saveSettings() async {

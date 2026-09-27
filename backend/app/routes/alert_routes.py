@@ -15,7 +15,7 @@ push_service = PushService()
 
 def get_supabase() -> Client:
     url = os.getenv("SUPABASE_URL", "")
-    key = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_ANON_KEY", ""))
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_ANON_KEY", "")))
     if not url or not key:
         raise RuntimeError("Supabase credentials not configured.")
     return create_client(url, key)
