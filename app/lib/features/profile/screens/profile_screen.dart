@@ -550,6 +550,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 subtitle: 'Pair physical smart pendant via BLE',
                 onTap: () => Navigator.pushNamed(context, '/wearable'),
               ),
+              const SizedBox(height: 10),
+
+              _buildMenuCard(
+                icon: Icons.mic_none_rounded,
+                iconColor: AppColors.accent,
+                title: 'Hands-Free Voice Activation',
+                subtitle: 'Say wake phrase "tuma msaada" to trigger SOS',
+                onTap: () => Navigator.pushNamed(context, '/voice-activation'),
+              ),
+              const SizedBox(height: 10),
+
+              _buildMenuCard(
+                icon: Icons.vibration_rounded,
+                iconColor: AppColors.primary,
+                title: 'Shake to Alert SOS',
+                subtitle: 'Armed for 3 vigorous shakes within 2s (22 m/s²)',
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Shake detection is armed and active in background'),
+                      backgroundColor: AppColors.primary,
+                    ),
+                  );
+                },
+              ),
               const SizedBox(height: 28),
 
               // Log Out Button

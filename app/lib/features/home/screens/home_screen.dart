@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../controllers/home_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
+import '../../emergency/controllers/emergency_controller.dart';
 
 
 class HomeScreen extends StatelessWidget {
@@ -335,11 +336,7 @@ class HomeScreen extends StatelessWidget {
                     child: _buildTriggerCard(
                       icon: Icons.vibration_rounded,
                       title: 'Shake Phone',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Shake detection is active in background')),
-                        );
-                      },
+                      onTap: () => _showShakeSettingsModal(context),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -347,11 +344,7 @@ class HomeScreen extends StatelessWidget {
                     child: _buildTriggerCard(
                       icon: Icons.mic_none_rounded,
                       title: 'Say Help',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Voice keyword "Help" detection listening')),
-                        );
-                      },
+                      onTap: () => Navigator.pushNamed(context, '/voice-activation'),
                     ),
                   ),
                 ],
@@ -502,5 +495,109 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+
+  void _showShakeSettingsModal(BuildContext context) {
+    final emergency = context.read<EmergencyController>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            final isEnabled = emergency.isShakeEnabled;
+            return Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.vibration_rounded, color: AppColors.primary, size: 24),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Shake SOS Detection',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Triple-shake trigger calibrated at 22.0 m/s²',
+                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.border),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Enable Shake Detection',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.textPrimary),
+                        ),
+                        Switch(
+                          value: isEnabled,
+                          activeTrackColor: AppColors.primary,
+                          activeThumbColor: Colors.white,
+                          onChanged: (val) {
+                            emergency.setShakeEnabled(val);
+                            setModalState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'When armed, shaking your phone firmly 3 times within 2 seconds initiates the 10-second SOS countdown.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+                  ),
+                  const SizedBox(height: 18),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.pushNamed(context, '/emergency');
+                    },
+                    icon: const Icon(Icons.flash_on_rounded, color: Colors.white, size: 18),
+                    label: const Text('Test Shake Trigger Now', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 }
+
 

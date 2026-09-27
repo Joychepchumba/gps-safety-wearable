@@ -41,7 +41,7 @@ Future<void> setupServiceLocator() async {
     sl.registerFactory(() => HomeController());
   }
   if (!sl.isRegistered<EmergencyController>()) {
-    sl.registerFactory(() => EmergencyController());
+    sl.registerLazySingleton(() => EmergencyController());
   }
   if (!sl.isRegistered<ContactsController>()) {
     sl.registerFactory(() => ContactsController());

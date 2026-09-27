@@ -29,6 +29,7 @@ import 'features/wearable/screens/wearable_screen.dart';
 import 'features/wearable/screens/pendant_shop_screen.dart';
 import 'features/alerts/screens/alert_history_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
+import 'features/emergency/screens/voice_activation_screen.dart';
 
 
 void main() async {
@@ -97,6 +98,7 @@ class SafeGuardApp extends StatelessWidget {
           '/shop': (context) => const PendantShopScreen(),
           '/verify-otp': (context) => const VerifyOtpScreen(),
           '/profile': (context) => const ProfileScreen(),
+          '/voice-activation': (context) => const VoiceActivationScreen(),
         },
 
       ),
