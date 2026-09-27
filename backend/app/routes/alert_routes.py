@@ -93,12 +93,19 @@ async def process_alert(user_id: str, trigger_method: str, lat: float, lng: floa
     except Exception as te:
         logger.warning("[LIVE 3D TRACKING NOTICE] Could not initialize session: %s", te)
 
-    contacts_res = supabase.table("emergency_contacts").select("phone_number").eq("user_id", user_id).eq("consent_status", "accepted").execute()
-    phones = [c["phone_number"] for c in contacts_res.data]
+    phones = []
+    try:
+        contacts_res = supabase.table("emergency_contacts").select("phone_number, contact_name").eq("user_id", user_id).execute()
+        phones = [c["phone_number"] for c in contacts_res.data if c.get("phone_number")]
+        logger.info("[ALERT DISPATCH] Found %d emergency contacts for user %s: %s", len(phones), user_id, phones)
+    except Exception as ce:
+        logger.error("[CONTACTS QUERY ERROR] Failed to fetch emergency contacts for user %s: %s", user_id, ce)
     
     sms_results = {}
     if phones:
         sms_results = sms_service.notify_emergency_contacts(phones, user_name, lat, lng, tracking_link=tracking_url)
+    else:
+        logger.warning("[ALERT DISPATCH] No emergency contacts found for user %s to notify via SMS.", user_id)
     
     police_res = sms_service.notify_police(user_name, lat, lng, tracking_link=tracking_url)
     sms_results.update(police_res)
