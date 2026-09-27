@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/validators.dart';
 import '../controllers/auth_controller.dart';
 
@@ -23,7 +22,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool _isPasswordVisible = false;
   bool _isConfirmVisible = false;
-  bool _isEmergencyVisible = false;
   bool _isCommunityResponder = false;
 
   @override
@@ -72,73 +70,163 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: AppColors.background,
         elevation: 0,
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'Create Account',
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold),
+          style: TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 12.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
           child: Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Top Avatar with Add photo
+                Center(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1.5),
+                        ),
+                        child: const Icon(
+                          Icons.person,
+                          size: 40,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.arrow_upward, size: 13, color: AppColors.primary),
+                          SizedBox(width: 4),
+                          Text(
+                            'Add photo',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
                 // Full Name
+                const Text(
+                  'Full Name',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _nameController,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   validator: (val) =>
                       Validators.isValidName(val ?? '') ? null : 'Enter your full name',
-                  decoration: _buildInputDecoration('Full Name', Icons.person_outline),
+                  decoration: _buildInputDecoration(hint: 'Joy Kipkemboi'),
                 ),
                 const SizedBox(height: 16),
 
-                // Phone Number (Kenya format)
-                TextFormField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  style: const TextStyle(color: AppColors.textPrimary),
-                  validator: (val) =>
-                      Validators.isValidPhone(val ?? '') ? null : 'Enter valid phone (e.g. 0712345678 or +2547...)',
-                  decoration: _buildInputDecoration('Phone Number (+254...)', Icons.phone_outlined),
+                // Phone Number with +254 Prefix Pill
+                const Text(
+                  'Phone Number',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      height: 52,
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: AppColors.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Text(
+                        '+254',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _phoneController,
+                        keyboardType: TextInputType.phone,
+                        style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                        validator: (val) =>
+                            Validators.isValidPhone(val ?? '') ? null : 'Enter valid phone number',
+                        decoration: _buildInputDecoration(hint: '712 000 000'),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
 
-                // Email
+                // Email Address
+                const Text(
+                  'Email Address',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   validator: (val) =>
                       Validators.isValidEmail(val ?? '') ? null : 'Enter a valid email address',
-                  decoration: _buildInputDecoration('Email Address', Icons.email_outlined),
+                  decoration: _buildInputDecoration(hint: 'joy@example.com'),
                 ),
                 const SizedBox(height: 16),
 
                 // Password
+                const Text(
+                  'Password',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _passwordController,
                   obscureText: !_isPasswordVisible,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   validator: (val) {
                     if (val == null || val.length < 6) return 'Password must be at least 6 characters';
                     return null;
                   },
                   decoration: _buildInputDecoration(
-                    'Password',
-                    Icons.lock_outline,
+                    hint: '••••••••',
                     suffixIcon: IconButton(
                       icon: Icon(
                         _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
                         color: AppColors.textSecondary,
+                        size: 20,
                       ),
                       onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
                     ),
@@ -147,118 +235,178 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 const SizedBox(height: 16),
 
                 // Confirm Password
+                const Text(
+                  'Confirm Password',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                ),
+                const SizedBox(height: 6),
                 TextFormField(
                   controller: _confirmPasswordController,
                   obscureText: !_isConfirmVisible,
-                  style: const TextStyle(color: AppColors.textPrimary),
+                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   validator: (val) {
                     if (val != _passwordController.text) return 'Passwords do not match';
                     return null;
                   },
                   decoration: _buildInputDecoration(
-                    'Confirm Password',
-                    Icons.lock_outline,
+                    hint: '••••••••',
                     suffixIcon: IconButton(
                       icon: Icon(
                         _isConfirmVisible ? Icons.visibility : Icons.visibility_off,
                         color: AppColors.textSecondary,
+                        size: 20,
                       ),
                       onPressed: () => setState(() => _isConfirmVisible = !_isConfirmVisible),
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
 
-                // Emergency Duress Password Section
+                // Community Responder Opt-In Card
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                    color: _isCommunityResponder
+                        ? AppColors.primary.withValues(alpha: 0.05)
+                        : AppColors.inputBg,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: _isCommunityResponder ? AppColors.primary : AppColors.border,
+                      width: _isCommunityResponder ? 1.5 : 1,
+                    ),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          Icon(Icons.shield, color: AppColors.primary, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            AppStrings.emergencyPasswordLabel,
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
+                            child: const Icon(
+                              Icons.health_and_safety_rounded,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'Become a Community Responder',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Help keep people near you safe',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Switch(
+                            value: _isCommunityResponder,
+                            onChanged: (val) => setState(() => _isCommunityResponder = val),
+                            activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 10),
                       const Text(
-                        AppStrings.emergencyPasswordDesc,
-                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                        'Opt in to receive silent alerts if someone triggers an emergency within 1 km of your location. Anyone can be a responder — with or without a pendant!',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                          height: 1.35,
+                        ),
                       ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _emergencyPasswordController,
-                        obscureText: !_isEmergencyVisible,
-                        keyboardType: TextInputType.text,
-                        style: const TextStyle(color: AppColors.textPrimary),
-                        validator: (val) {
-                          if (val != null && val.isNotEmpty && val == _passwordController.text) {
-                            return 'Duress code must be different from your normal password';
-                          }
-                          return null;
-                        },
-                        decoration: _buildInputDecoration(
-                          AppStrings.emergencyPasswordHint,
-                          Icons.key_outlined,
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _isEmergencyVisible ? Icons.visibility : Icons.visibility_off,
-                              color: AppColors.textSecondary,
-                            ),
-                            onPressed: () =>
-                                setState(() => _isEmergencyVisible = !_isEmergencyVisible),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Pendant store callout
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(
+                    children: const [
+                      Icon(Icons.shopping_bag_outlined, color: AppColors.primary, size: 18),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Need a wearable pendant? You can order one inside the app with fast doorstep delivery.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
 
-                // Community Responder Checkbox
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: CheckboxListTile(
-                    value: _isCommunityResponder,
-                    onChanged: (val) => setState(() => _isCommunityResponder = val ?? false),
-                    title: const Text(
-                      AppStrings.communityOptInLabel,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                // Terms & Conditions Checkbox
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Checkbox(
+                        value: true,
+                        onChanged: (_) {},
+                        activeColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                       ),
                     ),
-                    subtitle: const Text(
-                      AppStrings.communityOptInDesc,
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            'I agree to the Terms & Conditions',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          SizedBox(height: 3),
+                          Text(
+                            'Your location data is protected under Kenya DPA 2019 and automatically deleted after 24 hours',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    activeColor: AppColors.accent,
-                    checkColor: AppColors.background,
-                    controlAffinity: ListTileControlAffinity.leading,
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 24),
 
-                // Register Button
+                // Create Account Button
                 authController.isLoading
                     ? const Center(
                         child: CircularProgressIndicator(color: AppColors.primary),
@@ -271,18 +419,41 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          elevation: 4,
+                          elevation: 0,
                         ),
                         child: const Text(
                           'Create Account',
                           style: TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w700,
                             color: Colors.white,
                           ),
                         ),
                       ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
+
+                // Bottom Sign In Link
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text(
+                      'Already have an account? ',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: const Text(
+                        'Sign in',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -291,21 +462,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  InputDecoration _buildInputDecoration(String label, IconData prefixIcon, {Widget? suffixIcon}) {
+  InputDecoration _buildInputDecoration({required String hint, Widget? suffixIcon}) {
     return InputDecoration(
-      labelText: label,
-      labelStyle: const TextStyle(color: AppColors.textSecondary),
-      prefixIcon: Icon(prefixIcon, color: AppColors.textSecondary),
+      hintText: hint,
+      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: AppColors.surface,
-      border: OutlineInputBorder(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide.none,
+        borderSide: const BorderSide(color: AppColors.border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.error, width: 1.5),
       ),
     );
   }

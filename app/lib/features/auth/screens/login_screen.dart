@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_strings.dart';
 import '../controllers/auth_controller.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -55,84 +54,115 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
             child: Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(
-                    Icons.shield_outlined,
-                    size: 80,
-                    color: AppColors.primary,
+                  const SizedBox(height: 12),
+                  // Welcome Back header
+                  const Text(
+                    'WELCOME BACK',
+                    style: TextStyle(
+                      color: AppColors.primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    AppStrings.appName,
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Stay connected.\nStay protected.',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
                       color: AppColors.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Sign in to continue to your safety network.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Email Address
+                  const Text(
+                    'Email Address',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    AppStrings.tagline,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 36),
-
-                  // Email Field
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     validator: (val) {
                       if (val == null || val.trim().isEmpty) return 'Email is required';
                       if (!val.contains('@')) return 'Enter a valid email';
                       return null;
                     },
                     decoration: InputDecoration(
-                      labelText: 'Email Address',
-                      labelStyle: const TextStyle(color: AppColors.textSecondary),
-                      prefixIcon: const Icon(Icons.email_outlined, color: AppColors.textSecondary),
+                      hintText: 'joy@example.com',
+                      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
                       filled: true,
                       fillColor: AppColors.surface,
-                      border: OutlineInputBorder(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                        borderSide: const BorderSide(color: AppColors.border),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.error),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.error, width: 1.5),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
 
-                  // Password Field
+                  // Password
+                  const Text(
+                    'Password',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _passwordController,
                     obscureText: !_isPasswordVisible,
-                    style: const TextStyle(color: AppColors.textPrimary),
+                    style: const TextStyle(color: AppColors.textPrimary, fontSize: 15),
                     validator: (val) {
                       if (val == null || val.isEmpty) return 'Password is required';
                       if (val.length < 6) return 'Password must be at least 6 characters';
                       return null;
                     },
                     decoration: InputDecoration(
-                      labelText: 'Password',
-                      labelStyle: const TextStyle(color: AppColors.textSecondary),
-                      prefixIcon: const Icon(Icons.lock_outline, color: AppColors.textSecondary),
+                      hintText: '••••••••',
+                      hintStyle: const TextStyle(color: AppColors.textMuted, fontSize: 14),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _isPasswordVisible ? Icons.visibility : Icons.visibility_off,
                           color: AppColors.textSecondary,
+                          size: 20,
                         ),
                         onPressed: () {
                           setState(() {
@@ -142,13 +172,22 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       filled: true,
                       fillColor: AppColors.surface,
-                      border: OutlineInputBorder(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
+                        borderSide: const BorderSide(color: AppColors.border),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                      errorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.error),
+                      ),
+                      focusedErrorBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: AppColors.error, width: 1.5),
                       ),
                     ),
                   ),
@@ -159,15 +198,24 @@ class _LoginScreenState extends State<LoginScreen> {
                     alignment: Alignment.centerRight,
                     child: TextButton(
                       onPressed: () => Navigator.pushNamed(context, '/reset-password'),
+                      style: TextButton.styleFrom(
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(50, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
                       child: const Text(
-                        AppStrings.forgotPassword,
-                        style: TextStyle(color: AppColors.accent, fontSize: 13),
+                        'Forgot password?',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
 
-                  // Submit Button
+                  // Sign In Button
                   authController.isLoading
                       ? const Center(
                           child: CircularProgressIndicator(color: AppColors.primary),
@@ -180,34 +228,110 @@ class _LoginScreenState extends State<LoginScreen> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
-                            elevation: 4,
+                            elevation: 0,
                           ),
                           child: const Text(
-                            AppStrings.loginTitle,
+                            'Sign In',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
                           ),
                         ),
+                  const SizedBox(height: 14),
+
+                  // Sign in with Email OTP
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final email = _emailController.text.trim();
+                      if (email.isEmpty || !email.contains('@')) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Please enter a valid email address first')),
+                        );
+                        return;
+                      }
+                      final nav = Navigator.of(context);
+                      final sent = await authController.sendEmailOtp(email, context);
+                      if (sent && mounted) {
+                        nav.pushNamed('/verify-otp', arguments: email);
+                      }
+                    },
+                    icon: const Icon(Icons.email_outlined, color: AppColors.primary, size: 20),
+                    label: const Text(
+                      'Sign in with Email OTP code',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: AppColors.border),
+                      backgroundColor: AppColors.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 24),
 
-                  // Register link
+                  // Divider
+                  Row(
+                    children: [
+                      const Expanded(child: Divider(color: AppColors.border)),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'or continue with',
+                          style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                        ),
+                      ),
+                      const Expanded(child: Divider(color: AppColors.border)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Google button
+                  OutlinedButton.icon(
+                    onPressed: () => authController.signInWithGoogle(context),
+                    icon: const Icon(Icons.g_mobiledata_rounded, color: AppColors.textPrimary, size: 28),
+                    label: const Text(
+                      'Google',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: const BorderSide(color: AppColors.border),
+                      backgroundColor: AppColors.surface,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
+                  // Bottom register link
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Text(
-                        "Don't have an account? ",
-                        style: TextStyle(color: AppColors.textSecondary),
+                        'New to SafeLink? ',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
                       ),
                       GestureDetector(
                         onTap: () => Navigator.pushNamed(context, '/register'),
                         child: const Text(
-                          'Register',
+                          'Create account',
                           style: TextStyle(
-                            color: AppColors.accent,
+                            color: AppColors.primary,
                             fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
                         ),
                       ),

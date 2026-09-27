@@ -15,7 +15,7 @@ push_service = PushService()
 
 def get_supabase() -> Client:
     url = os.getenv("SUPABASE_URL", "")
-    key = os.getenv("SUPABASE_SERVICE_KEY", "")
+    key = os.getenv("SUPABASE_SERVICE_KEY", os.getenv("SUPABASE_ANON_KEY", ""))
     if not url or not key:
         raise RuntimeError("Supabase credentials not configured.")
     return create_client(url, key)
@@ -42,9 +42,17 @@ class AppAlertRequest(BaseModel):
 async def trigger_app_alert(alert: AppAlertRequest, supabase: Client = Depends(get_supabase)):
     return await process_alert(alert.user_id, alert.trigger_method, alert.latitude, alert.longitude, alert.accuracy_m, None, supabase)
 
+import logging
+logger = logging.getLogger(__name__)
+
 async def process_alert(user_id: str, trigger_method: str, lat: float, lng: float, accuracy: float, wearable_id: str, supabase: Client) -> AlertResponse:
-    user_res = supabase.table("users").select("full_name").eq("id", user_id).execute()
-    user_name = user_res.data[0]["full_name"] if user_res.data else "Unknown User"
+    logger.info("Processing alert for user %s via %s (lat: %s, lng: %s)", user_id, trigger_method, lat, lng)
+    try:
+        user_res = supabase.table("users").select("full_name").eq("id", user_id).execute()
+        user_name = user_res.data[0]["full_name"] if user_res.data else "Unknown User"
+    except Exception as e:
+        logger.error("[DB ERROR] Failed to fetch user profile %s: %s", user_id, e)
+        user_name = "Unknown User"
     
     event_data = {
         "user_id": user_id,
@@ -57,8 +65,14 @@ async def process_alert(user_id: str, trigger_method: str, lat: float, lng: floa
     if wearable_id:
         event_data["wearable_device_id"] = wearable_id
         
-    event_res = supabase.table("panic_events").insert(event_data).execute()
-    event_id = event_res.data[0]["id"]
+    try:
+        logger.info("[DB INSERT] Inserting into panic_events: %s", event_data)
+        event_res = supabase.table("panic_events").insert(event_data).execute()
+        event_id = event_res.data[0]["id"]
+        logger.info("[DB SUCCESS] Panic event created with ID: %s", event_id)
+    except Exception as e:
+        logger.error("[DB ERROR] Failed to insert panic_event: %s", e)
+        raise HTTPException(status_code=500, detail=f"Database error inserting panic event: {e}")
     
     contacts_res = supabase.table("emergency_contacts").select("phone_number").eq("user_id", user_id).eq("consent_status", "accepted").execute()
     phones = [c["phone_number"] for c in contacts_res.data]

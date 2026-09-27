@@ -1,6 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../../../models/panic_event_model.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/di/service_locator.dart';
 
@@ -55,11 +58,43 @@ class EmergencyController extends ChangeNotifier {
       final user = _supabaseService.client.auth.currentUser;
       if (user == null) throw Exception('Not logged in');
 
-      // 1. Get location (stub)
+      // 1. Get location (stub or geolocator)
       const double lat = -1.2921;
       const double lng = 36.8219;
 
-      // 2. Create panic event
+      // 2. Send to FastAPI backend via ngrok
+      try {
+        final baseUrl = await AppConstants.getEffectiveBackendUrl();
+        final backendUri = Uri.parse('$baseUrl/alert/app');
+        debugPrint('[BACKEND] Sending alert to: $backendUri');
+        final backendRes = await http.post(
+          backendUri,
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode({
+            'user_id': user.id,
+            'trigger_method': 'app_button',
+            'latitude': lat,
+            'longitude': lng,
+            'accuracy_m': 15.0,
+          }),
+        ).timeout(const Duration(seconds: 8));
+
+        if (backendRes.statusCode == 200 || backendRes.statusCode == 201) {
+          debugPrint('[BACKEND SUCCESS] Alert processed by backend: ${backendRes.body}');
+          state = EmergencyState.sent;
+          notifyListeners();
+          return;
+        } else {
+          debugPrint('[BACKEND NOTICE] Backend returned status ${backendRes.statusCode}: ${backendRes.body}');
+        }
+      } catch (backendError) {
+        debugPrint('[BACKEND NOTICE] Direct backend call failed: $backendError, falling back to direct Supabase');
+      }
+
+      // Fallback: direct Supabase insert
       final eventData = {
         'user_id': user.id,
         'trigger_method': 'app_button',
@@ -75,10 +110,6 @@ class EmergencyController extends ChangeNotifier {
           .single();
 
       activeEvent = PanicEventModel.fromJson(response);
-
-      // 3-7. Stubs for streaming GPS, getting contacts, sending SMS, push notifications
-      await Future.delayed(const Duration(seconds: 2));
-
       state = EmergencyState.sent;
     } catch (e) {
       debugPrint('Error sending alert: $e');

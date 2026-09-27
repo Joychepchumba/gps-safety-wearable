@@ -20,12 +20,16 @@ import 'features/auth/screens/register_screen.dart';
 import 'features/auth/screens/mfa_verify_screen.dart';
 import 'features/auth/screens/mfa_setup_screen.dart';
 import 'features/auth/screens/reset_password_screen.dart';
+import 'features/auth/screens/verify_otp_screen.dart';
 import 'features/home/screens/home_screen.dart';
 import 'features/emergency/screens/emergency_screen.dart';
 import 'features/contacts/screens/contacts_screen.dart';
 import 'features/map/screens/map_screen.dart';
 import 'features/wearable/screens/wearable_screen.dart';
+import 'features/wearable/screens/pendant_shop_screen.dart';
 import 'features/alerts/screens/alert_history_screen.dart';
+import 'features/profile/screens/profile_screen.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,17 +55,17 @@ class SafeGuardApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => sl<AlertController>()),
       ],
       child: MaterialApp(
-        title: 'SafeGuard',
+        title: 'SafeLink',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData.dark().copyWith(
+        theme: ThemeData.light().copyWith(
           scaffoldBackgroundColor: AppColors.background,
-          colorScheme: const ColorScheme.dark(
+          colorScheme: const ColorScheme.light(
             primary: AppColors.primary,
-            secondary: AppColors.accent,
+            secondary: AppColors.secondary,
             surface: AppColors.surface,
             error: AppColors.error,
           ),
-          textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).apply(
+          textTheme: GoogleFonts.interTextTheme(ThemeData.light().textTheme).apply(
             bodyColor: AppColors.textPrimary,
             displayColor: AppColors.textPrimary,
           ),
@@ -90,7 +94,11 @@ class SafeGuardApp extends StatelessWidget {
           '/contacts': (context) => const ContactsScreen(),
           '/alerts': (context) => const AlertHistoryScreen(),
           '/wearable': (context) => const WearableScreen(),
+          '/shop': (context) => const PendantShopScreen(),
+          '/verify-otp': (context) => const VerifyOtpScreen(),
+          '/profile': (context) => const ProfileScreen(),
         },
+
       ),
     );
   }

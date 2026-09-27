@@ -45,6 +45,22 @@ class VerifyEmergencyPasswordRequest(BaseModel):
     user_id: str
     password_attempt: str
 
+class CreateUserProfileRequest(BaseModel):
+    user_id: str
+    full_name: str
+    phone_number: str
+    email: Optional[str] = None
+    is_community_responder: bool = False
+    emergency_password: Optional[str] = None
+
+class RegisterUserRequest(BaseModel):
+    full_name: str
+    phone_number: str
+    email: str
+    password: str
+    is_community_responder: bool = False
+    emergency_password: Optional[str] = None
+
 class UserProfileResponse(BaseModel):
     id: str
     full_name: str
@@ -55,3 +71,18 @@ class UserProfileResponse(BaseModel):
     has_emergency_password: bool = False
     has_wearable: bool = False
     created_at: Optional[str] = None
+
+class UpdateUserProfileRequest(BaseModel):
+    user_id: str
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    is_community_responder: Optional[bool] = None
+    emergency_password: Optional[str] = None
+
+class EmergencyContactCreateRequest(BaseModel):
+    user_id: str
+    contact_name: str
+    phone_number: str
+    email: Optional[str] = None
+
+

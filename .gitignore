@@ -41,12 +41,14 @@ app/.flutter-plugins
 app/.flutter-plugins-dependencies
 
 # Python
-backend/__pycache__/
 backend/.venv/
-backend/*.pyc
+**/__pycache__/
+*.pyc
+
 
 # IDE
 .vscode/settings.json
+.vscode/launch.json
 .idea/
 
 # KiCad auto-generated

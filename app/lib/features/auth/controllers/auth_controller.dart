@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../models/user_model.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/di/service_locator.dart';
 
 enum AuthStatus {
@@ -37,33 +40,120 @@ class AuthController extends ChangeNotifier {
     if (user == null) {
       _status = AuthStatus.unauthenticated;
       notifyListeners();
+      if (ctx.mounted) {
+        Navigator.of(ctx).pushReplacementNamed('/login');
+      }
       return;
     }
 
     try {
-      final isMfaNeeded = _supabaseService.isMfaChallengeRequired();
-      if (isMfaNeeded) {
-        final factors = await _supabaseService.listMfaFactors();
-        if (factors.isNotEmpty) {
-          pendingMfaFactorId = factors.first.id;
-          _status = AuthStatus.mfaRequired;
-          notifyListeners();
-          if (ctx.mounted) {
-            Navigator.of(ctx).pushReplacementNamed('/mfa-verify');
-          }
-          return;
-        }
-      }
-
-      currentUser = await _supabaseService.fetchUserProfile(user.id);
+      // 1. Instantly authenticate and route to /home so emergency SOS is immediately available!
+      currentUser = UserModel(
+        id: user.id,
+        fullName: user.userMetadata?['full_name'] as String? ?? 'SafeLink User',
+        phoneNumber: user.userMetadata?['phone'] as String? ?? '',
+        email: user.email ?? '',
+        isCommunityResponder: user.userMetadata?['is_community_responder'] as bool? ?? false,
+        hasWearable: false,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
       _status = AuthStatus.authenticated;
       notifyListeners();
+
       if (ctx.mounted) {
         Navigator.of(ctx).pushReplacementNamed('/home');
       }
-    } catch (e) {
+
+      // 2. Asynchronously refresh full profile in background without blocking emergency screen
+      _supabaseService.fetchUserProfile(user.id).then((profile) {
+        if (profile != null) {
+          currentUser = profile;
+          notifyListeners();
+        }
+      }).catchError((_) {});
+    } catch (_) {
+      // In case of any error, keep user on home screen if session exists
+      if (ctx.mounted) {
+        Navigator.of(ctx).pushReplacementNamed('/home');
+      }
+    }
+  }
+
+  /// Send OTP to Email for passwordless sign-in / verification
+  Future<bool> sendEmailOtp(String email, BuildContext ctx) async {
+    _status = AuthStatus.loading;
+    clearError();
+    notifyListeners();
+
+    try {
+      await _supabaseService.sendEmailOtp(email);
       _status = AuthStatus.unauthenticated;
       notifyListeners();
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('A 6-digit login code was sent to $email')),
+        );
+      }
+      return true;
+    } catch (e) {
+      errorMessage = _formatErrorMessage(e);
+      _status = AuthStatus.error;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Verify Email OTP code
+  Future<bool> verifyEmailOtp({
+    required String email,
+    required String token,
+    required BuildContext ctx,
+  }) async {
+    _status = AuthStatus.loading;
+    clearError();
+    notifyListeners();
+
+    try {
+      final res = await _supabaseService.verifyEmailOtp(email: email, token: token);
+      if (res.user != null) {
+        currentUser = await _supabaseService.fetchUserProfile(res.user!.id) ??
+            UserModel(
+              id: res.user!.id,
+              fullName: res.user!.userMetadata?['full_name'] as String? ?? 'SafeLink User',
+              phoneNumber: res.user!.userMetadata?['phone'] as String? ?? '',
+              email: res.user!.email ?? email,
+              isCommunityResponder: res.user!.userMetadata?['is_community_responder'] as bool? ?? false,
+              hasWearable: false,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+        _status = AuthStatus.authenticated;
+        notifyListeners();
+        if (ctx.mounted) {
+          Navigator.of(ctx).pushNamedAndRemoveUntil('/home', (route) => false);
+        }
+        return true;
+      }
+      throw Exception('Invalid or expired OTP code');
+    } catch (e) {
+      errorMessage = _formatErrorMessage(e);
+      _status = AuthStatus.error;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Sign In with Google via OAuth
+  Future<void> signInWithGoogle(BuildContext ctx) async {
+    try {
+      await _supabaseService.signInWithGoogle();
+    } catch (e) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('Google Sign-In: ${_formatErrorMessage(e)}')),
+        );
+      }
     }
   }
 
@@ -165,6 +255,32 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 1. Send registration to FastAPI backend (logs live in terminal and creates in DB)
+      try {
+        final backendBase = await AppConstants.getEffectiveBackendUrl();
+        final regUri = Uri.parse('$backendBase/users/register');
+        debugPrint('[BACKEND] Sending registration request to: $regUri');
+        final res = await http.post(
+          regUri,
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode({
+            'full_name': fullName.trim(),
+            'phone_number': phone.trim(),
+            'email': email.trim(),
+            'password': password,
+            'is_community_responder': isCommunityResponder,
+            'emergency_password': emergencyPassword,
+          }),
+        ).timeout(const Duration(seconds: 10));
+        debugPrint('[BACKEND] Registration response: ${res.statusCode} ${res.body}');
+      } catch (backendError) {
+        debugPrint('[BACKEND NOTICE] Backend registration error: $backendError');
+      }
+
+      // 2. Register with Supabase
       final response = await _supabaseService.signUp(
         email: email,
         password: password,
@@ -174,11 +290,9 @@ class AuthController extends ChangeNotifier {
         emergencyPassword: emergencyPassword,
       );
 
-      if (response.user == null) {
-        throw Exception('Registration did not return a valid user.');
+      if (response.user != null) {
+        currentUser = await _supabaseService.fetchUserProfile(response.user!.id);
       }
-
-      currentUser = await _supabaseService.fetchUserProfile(response.user!.id);
       _status = AuthStatus.authenticated;
       notifyListeners();
 
@@ -369,6 +483,71 @@ class AuthController extends ChangeNotifier {
       return true;
     } catch (e) {
       errorMessage = _formatErrorMessage(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Update user profile details (Name, Phone, Responder Opt-in, Emergency PIN)
+
+  Future<bool> updateProfile({
+    required String fullName,
+    required String phoneNumber,
+    bool? isCommunityResponder,
+    String? emergencyPassword,
+  }) async {
+    if (currentUser == null) return false;
+    _status = AuthStatus.loading;
+    clearError();
+    notifyListeners();
+
+    try {
+      // 1. Update in Supabase public.users
+      await _supabaseService.updateUserProfile(
+        userId: currentUser!.id,
+        fullName: fullName.trim(),
+        phoneNumber: phoneNumber.trim(),
+        isCommunityResponder: isCommunityResponder,
+      );
+
+      // 2. Update duress password if provided
+      if (emergencyPassword != null && emergencyPassword.trim().isNotEmpty) {
+        await _supabaseService.updateEmergencyPassword(
+          userId: currentUser!.id,
+          emergencyPassword: emergencyPassword.trim(),
+        );
+      }
+
+      // 3. Sync to FastAPI backend
+      try {
+        final backendBase = await AppConstants.getEffectiveBackendUrl();
+        final patchUri = Uri.parse('$backendBase/users/profile');
+        await http.patch(
+          patchUri,
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode({
+            'user_id': currentUser!.id,
+            'full_name': fullName.trim(),
+            'phone_number': phoneNumber.trim(),
+            'is_community_responder': isCommunityResponder,
+            'emergency_password': emergencyPassword != null && emergencyPassword.trim().isNotEmpty ? emergencyPassword.trim() : null,
+          }),
+        ).timeout(const Duration(seconds: 5));
+      } catch (backendError) {
+        debugPrint('[BACKEND NOTICE] Backend profile update notice: $backendError');
+      }
+
+      // 4. Refresh current user profile
+      currentUser = await _supabaseService.fetchUserProfile(currentUser!.id);
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      errorMessage = _formatErrorMessage(e);
+      _status = AuthStatus.authenticated;
       notifyListeners();
       return false;
     }

@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_model.dart';
+import '../constants/app_constants.dart';
 
 class SupabaseService {
   final SupabaseClient _client = Supabase.instance.client;
@@ -74,8 +77,33 @@ class SupabaseService {
           upsertData['emergency_password_hash'] = emergencyHash;
         }
         await _client.from('users').upsert(upsertData);
-      } catch (_) {
-        // If trigger already handled it, ignore
+      } catch (e) {
+        // Surface the real error for debugging
+        debugPrint('[SUPABASE ERROR] Failed inserting into public.users: $e');
+      }
+
+      // Also sync with FastAPI backend so it shows up in backend console & database
+      try {
+        final backendBase = await AppConstants.getEffectiveBackendUrl();
+        final syncUri = Uri.parse('$backendBase/users/profile');
+        debugPrint('[BACKEND SYNC] Syncing user profile to: $syncUri');
+        http.post(
+          syncUri,
+          headers: {
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
+          },
+          body: jsonEncode({
+            'user_id': response.user!.id,
+            'full_name': fullName.trim(),
+            'phone_number': phone.trim(),
+            'email': email.trim(),
+            'is_community_responder': isCommunityResponder,
+            'emergency_password': emergencyPassword,
+          }),
+        ).catchError((_) => http.Response('{}', 500));
+      } catch (backendErr) {
+        debugPrint('[BACKEND SYNC NOTICE] Backend sync optional: $backendErr');
       }
     }
 
@@ -135,9 +163,10 @@ class SupabaseService {
     return await _client.auth.mfa.unenroll(factorId);
   }
 
-  /// Send password reset email
+  /// Send password reset OTP code directly to email (Pure 6-digit OTP, no localhost links)
   Future<void> sendPasswordResetEmail(String email) async {
-    await _client.auth.resetPasswordForEmail(email.trim());
+    // Send 6-digit OTP code directly to email (avoids localhost redirect links)
+    await _client.auth.signInWithOtp(email: email.trim());
   }
 
   /// Verify OTP sent via email for password recovery
@@ -145,12 +174,66 @@ class SupabaseService {
     required String email,
     required String otp,
   }) async {
-    return await _client.auth.verifyOTP(
-      email: email.trim(),
-      token: otp.trim(),
-      type: OtpType.recovery,
-    );
+    try {
+      return await _client.auth.verifyOTP(
+        email: email.trim(),
+        token: otp.trim(),
+        type: OtpType.magiclink,
+      );
+    } catch (_) {
+      try {
+        return await _client.auth.verifyOTP(
+          email: email.trim(),
+          token: otp.trim(),
+          type: OtpType.email,
+        );
+      } catch (_) {
+        return await _client.auth.verifyOTP(
+          email: email.trim(),
+          token: otp.trim(),
+          type: OtpType.recovery,
+        );
+      }
+    }
   }
+
+  /// Update user profile details in public.users
+  Future<void> updateUserProfile({
+    required String userId,
+    String? fullName,
+    String? phoneNumber,
+    bool? isCommunityResponder,
+  }) async {
+    final Map<String, dynamic> updates = {
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+    if (fullName != null && fullName.trim().isNotEmpty) {
+      updates['full_name'] = fullName.trim();
+    }
+    if (phoneNumber != null && phoneNumber.trim().isNotEmpty) {
+      updates['phone_number'] = phoneNumber.trim();
+    }
+    if (isCommunityResponder != null) {
+      updates['is_community_responder'] = isCommunityResponder;
+      updates['responder_status'] = isCommunityResponder ? 'available' : 'unavailable';
+      if (isCommunityResponder) {
+        updates['responder_opted_in_at'] = DateTime.now().toIso8601String();
+      } else {
+        updates['responder_opted_out_at'] = DateTime.now().toIso8601String();
+      }
+    }
+    await _client.from('users').update(updates).eq('id', userId);
+
+    try {
+      await _client.auth.updateUser(UserAttributes(
+        data: {
+          if (fullName != null && fullName.trim().isNotEmpty) 'full_name': fullName.trim(),
+          if (phoneNumber != null && phoneNumber.trim().isNotEmpty) 'phone': phoneNumber.trim(),
+        },
+      ));
+    } catch (_) {}
+  }
+
 
   /// Update password once recovery session is active or user is logged in
   Future<UserResponse> updatePassword(String newPassword) async {
@@ -196,5 +279,28 @@ class SupabaseService {
       if (!optIn) 'responder_opted_out_at': now,
       'updated_at': now,
     }).eq('id', userId);
+  }
+
+  /// Send 6-digit OTP code to email for login or email confirmation
+  Future<void> sendEmailOtp(String email) async {
+    await _client.auth.signInWithOtp(email: email.trim());
+  }
+
+  /// Verify 6-digit OTP code received via email
+  Future<AuthResponse> verifyEmailOtp({
+    required String email,
+    required String token,
+    OtpType type = OtpType.magiclink,
+  }) async {
+    return await _client.auth.verifyOTP(
+      email: email.trim(),
+      token: token.trim(),
+      type: type,
+    );
+  }
+
+  /// Sign In with Google via OAuth
+  Future<bool> signInWithGoogle() async {
+    return await _client.auth.signInWithOAuth(OAuthProvider.google);
   }
 }

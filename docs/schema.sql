@@ -1,8 +1,4 @@
--- ============================================================
--- GPS Safety Wearable — Supabase Schema
--- DPA 2024 (Kenya) Compliant
--- Author: Joy Kipkemboi — Strathmore University
--- ============================================================
+
 
 -- EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -172,7 +168,6 @@ CREATE TABLE IF NOT EXISTS public.sharing_session_contacts (
     PRIMARY KEY(session_id, contact_id)
 );
 
--- ─── AUTOMATIC PROFILE CREATION TRIGGER ───────────────────
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -213,7 +208,7 @@ CREATE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- ─── TIMESTAMPS TRIGGER ───────────────────────────────────
+
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -231,8 +226,7 @@ CREATE TRIGGER update_emergency_contacts_updated_at BEFORE UPDATE ON public.emer
 DROP TRIGGER IF EXISTS update_panic_events_updated_at ON public.panic_events;
 CREATE TRIGGER update_panic_events_updated_at BEFORE UPDATE ON public.panic_events FOR EACH ROW EXECUTE PROCEDURE public.set_updated_at();
 
--- ─── DPA 2024 ANONYMISATION FUNCTION ───────────────────────
--- Anonymises exact GPS coordinates after 24 hours (reduces precision to 2 decimal places ~1.1km grid)
+
 CREATE OR REPLACE FUNCTION public.anonymise_old_panic_locations()
 RETURNS void AS $$
 BEGIN
@@ -269,7 +263,7 @@ EXCEPTION WHEN OTHERS THEN
     RAISE NOTICE 'pg_cron not available or schedule failed; function can still be run via webhook or scheduled edge function.';
 END $$;
 
--- ─── ROW LEVEL SECURITY (RLS) ──────────────────────────────
+-- ROW LEVEL SECURITY (RLS)
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wearable_devices ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.emergency_contacts ENABLE ROW LEVEL SECURITY;

@@ -1,6 +1,6 @@
 class AppStrings {
-  static const String appName = 'SafeGuard';
-  static const String tagline = 'Your personal safety companion';
+  static const String appName = 'SafeLink';
+  static const String tagline = 'Your safety, always connected';
   
   // Screen Titles
   static const String homeTitle = 'Home';

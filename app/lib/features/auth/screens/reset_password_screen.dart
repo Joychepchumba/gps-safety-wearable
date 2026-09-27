@@ -43,7 +43,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     if (success && mounted) {
       setState(() => _codeSent = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Password reset instructions sent to your email!')),
+        const SnackBar(content: Text('A 6-digit OTP code has been sent to your email!')),
       );
     }
   }
@@ -55,7 +55,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
     if (otp.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the 6-digit code sent to your email'), backgroundColor: AppColors.error),
+        const SnackBar(content: Text('Please enter the 6-digit OTP code sent to your email'), backgroundColor: AppColors.error),
       );
       return;
     }
@@ -121,7 +121,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                _codeSent ? 'Enter Verification Code' : 'Reset Your Password',
+                _codeSent ? 'Enter 6-Digit OTP Code' : 'Reset Your Password',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   color: AppColors.textPrimary,
@@ -131,11 +131,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               const SizedBox(height: 8),
               Text(
                 _codeSent
-                    ? 'Enter the 6-digit code sent to ${_emailController.text} and your new password.'
-                    : 'Enter your registered email address and we will send you a recovery code.',
+                    ? 'Enter the 6-digit OTP code sent to ${_emailController.text} and your new password. No link clicking needed!'
+                    : 'Enter your registered email address and we will send you a 6-digit OTP recovery code directly.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
               ),
+
               const SizedBox(height: 32),
 
               if (!_codeSent) ...[
