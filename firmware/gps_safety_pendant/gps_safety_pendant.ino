@@ -128,11 +128,14 @@ String deviceUUID       = "";
 // 5. TIMING, THRESHOLDS & LOCATION STATE
 // ------------------------------------------------------------------------------
 const unsigned long FIX_WAIT_MS      = 6000UL;   // GPS outdoor check window before fallback (indoor-optimized)
-const unsigned long DOUBLE_GAP_MS    = 1000UL;   // max time between release and 2nd press
-const unsigned long LONG_PRESS_MS    = 1500UL;   // press longer than this is ignored
-const unsigned long DEBOUNCE_MS      = 40UL;     // touch debounce
-const unsigned long COOLDOWN_MS      = 25000UL;  // minimum time between triggered alerts
-const unsigned long HEARTBEAT_INT_MS = 60000UL;  // periodic DB heartbeat interval (60s)
+const unsigned long BOOT_GUARD_MS    = 4000UL;   // Ignore touch during first 4s after boot/flash while TTP223 calibrates
+const unsigned long DEBOUNCE_MS      = 60UL;     // Touch debounce (filters wire bounce & EMI)
+const unsigned long MIN_TAP_MS       = 80UL;     // Taps shorter than 80ms are rejected as electrical/wire noise
+const unsigned long MAX_TAP_MS       = 900UL;    // Taps longer than 900ms are treated as holds
+const unsigned long HOLD_PANIC_MS    = 1500UL;   // Hold continuously for 1.5s to trigger panic
+const unsigned long DOUBLE_GAP_MS    = 1200UL;   // Max time between tap 1 and tap 2
+const unsigned long COOLDOWN_MS      = 25000UL;  // Minimum time between triggered alerts
+const unsigned long HEARTBEAT_INT_MS = 60000UL;  // Periodic DB heartbeat interval (60s)
 
 // Location state in RAM & Flash (Strathmore University Main Campus)
 String lastLat = "-1.309250";   // Strathmore University, Ole Sangale Rd, Nairobi
@@ -936,9 +939,21 @@ bool triggerPending = false;
 
 void updateTouch() {
   unsigned long now = millis();
+
+  // 1. BOOT WARMUP GUARD: Ignore all inputs during the first 4s after boot/flash
+  //    This gives the TTP223 time to self-calibrate ambient capacitance and
+  //    settles power fluctuations from USB upload/reset.
+  if (now < BOOT_GUARD_MS) {
+    touchStable = false;
+    touchRaw = false;
+    touchDownMs = 0;
+    tapCount = 0;
+    return;
+  }
+
   bool raw = (digitalRead(TOUCH_PIN) == HIGH);
 
-  // Debounce filter
+  // 2. Hardware Debounce filter (60ms stable window)
   if (raw != touchRaw) {
     touchRaw = raw;
     rawChangedMs = now;
@@ -947,38 +962,44 @@ void updateTouch() {
   if (now - rawChangedMs >= DEBOUNCE_MS && touchStable != touchRaw) {
     touchStable = touchRaw;
 
-    if (touchStable) { // --- FINGER TOUCH DOWN ---
+    if (touchStable) { 
+      // --- FINGER TOUCH DOWN ---
       touchDownMs = now;
       digitalWrite(PIN_STATUS_LED, HIGH);
-
-      // Check if this is the 2nd tap within 1.5 seconds of the previous tap
-      if (tapCount == 1 && (now - lastTapTime <= 1500UL)) {
-        tapCount = 0;
-        touchDownMs = 0;
-        if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
-          Serial.println(F("\n========================================================"));
-          Serial.println(F(" [TOUCH] >>> DOUBLE-TAP SOS CONFIRMED! <<<"));
-          Serial.println(F("========================================================\n"));
-          currentTriggerReason = "pendant_touch";
-          triggerPending = true;
-          lastTriggerMs = now;
-        } else {
-          Serial.println(F("[TOUCH] Double-tap detected but ignored (cooldown in effect)."));
-        }
-      } else {
-        // First tap registered
-        tapCount = 1;
-        lastTapTime = now;
-        Serial.println(F("[TOUCH] Tap 1 detected! (Tap again within 1.5s OR keep holding for 1.5s for SOS)"));
-      }
-    } else { // --- FINGER LIFTED ---
+    } else { 
+      // --- FINGER RELEASED / LIFTED ---
       digitalWrite(PIN_STATUS_LED, LOW);
-      touchDownMs = 0; // Reset hold timer upon release
+      unsigned long pressDuration = (touchDownMs > 0) ? (now - touchDownMs) : 0;
+      touchDownMs = 0;
+
+      // Noise Rejection: Spikes shorter than MIN_TAP_MS (80ms) are wire noise or EMI glitches
+      if (pressDuration < MIN_TAP_MS) {
+        // Glitch rejected (wire moved near sensor or brief static spike)
+      } else if (pressDuration <= MAX_TAP_MS) {
+        // Genuine human tap confirmed upon release!
+        if (tapCount == 0) {
+          tapCount = 1;
+          lastTapTime = now;
+          Serial.println(F("[TOUCH] Valid Tap 1 detected (Release verified). Tap once more within 1.2s for SOS."));
+        } else if (tapCount == 1 && (now - lastTapTime <= DOUBLE_GAP_MS)) {
+          tapCount = 0;
+          if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+            Serial.println(F("\n========================================================"));
+            Serial.println(F(" [TOUCH] >>> DOUBLE-TAP SOS CONFIRMED! <<<"));
+            Serial.println(F("========================================================\n"));
+            currentTriggerReason = "pendant_touch";
+            triggerPending = true;
+            lastTriggerMs = now;
+          } else {
+            Serial.println(F("[TOUCH] Double-tap detected but ignored (cooldown in effect)."));
+          }
+        }
+      }
     }
   }
 
-  // --- HOLD-TO-PANIC: Trigger immediately if held continuously for >= 1.5 seconds ---
-  if (touchStable && touchDownMs > 0 && (now - touchDownMs >= 1500UL)) {
+  // 3. --- HOLD-TO-PANIC: Trigger immediately if held continuously for >= HOLD_PANIC_MS (1.5s) ---
+  if (touchStable && touchDownMs > 0 && (now - touchDownMs >= HOLD_PANIC_MS)) {
     touchDownMs = 0; // Prevent repeated triggers while still holding
     tapCount = 0;
     if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
@@ -991,10 +1012,10 @@ void updateTouch() {
     }
   }
 
-  // Tap timeout: reset state if 2nd tap doesn't arrive within 1.5s
-  if (tapCount == 1 && (now - lastTapTime > 1500UL) && !touchStable) {
+  // 4. Tap timeout: reset state if 2nd tap doesn't arrive within DOUBLE_GAP_MS
+  if (tapCount == 1 && (now - lastTapTime > DOUBLE_GAP_MS) && !touchStable) {
     tapCount = 0;
-    Serial.println(F("[TOUCH] Tap timeout. Reset to standby."));
+    Serial.println(F("[TOUCH] Double-tap window expired. Standby."));
   }
 }
 
@@ -1182,13 +1203,35 @@ void monitorMicLive() {
   Serial.println(F("--- End of Mic Monitor ---\n"));
 }
 
+void scanWiFi() {
+  Serial.println(F("\n[WiFi] Scanning nearby 2.4 GHz networks..."));
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  delay(100);
+  int n = WiFi.scanNetworks();
+  if (n == 0) {
+    Serial.println(F("[WiFi] No networks found."));
+  } else {
+    Serial.printf("[WiFi] Found %d networks:\n", n);
+    for (int i = 0; i < n; ++i) {
+      Serial.printf("  %2d: %-24s (Signal: %4d dBm, Ch: %2d, %s)\n",
+                    i + 1,
+                    WiFi.SSID(i).c_str(),
+                    WiFi.RSSI(i),
+                    WiFi.channel(i),
+                    (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured");
+    }
+  }
+  Serial.println();
+}
+
 // ------------------------------------------------------------------------------
 // 13. SETUP
 // ------------------------------------------------------------------------------
 void setup() {
   pinMode(PIN_STATUS_LED, OUTPUT);
   digitalWrite(PIN_STATUS_LED, LOW);
-  pinMode(TOUCH_PIN, INPUT);
+  pinMode(TOUCH_PIN, INPUT_PULLDOWN); // Internal pull-down suppresses floating noise & wire capacitive coupling
 
   // Initialize Microphone (GPIO2) & Voice Subsystem
   setupMicrophone();

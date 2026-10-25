@@ -126,4 +126,26 @@ SET contact_name = EXCLUDED.contact_name,
     consent_status = 'accepted',
     updated_at = now();
 
+-- 8. SEED WEARABLE DEVICE & LINK TO USER
+INSERT INTO public.wearable_devices (id, user_id, device_mac, device_name, firmware_version, is_active, last_seen_at)
+VALUES (
+    '69e529ae-6af0-4328-8ca1-2dabdd2a6f75',
+    '7426cae6-d358-4a02-9e2f-c7839a864e93',
+    '7C:DF:A1:00:11:22',
+    'SafeLink Smart Pendant',
+    '2.2.0',
+    true,
+    now()
+)
+ON CONFLICT (device_mac) DO UPDATE
+SET user_id = EXCLUDED.user_id,
+    device_name = EXCLUDED.device_name,
+    firmware_version = EXCLUDED.firmware_version,
+    is_active = true,
+    last_seen_at = now();
+
+UPDATE public.users 
+SET has_wearable = true, updated_at = now() 
+WHERE id = '7426cae6-d358-4a02-9e2f-c7839a864e93';
+
 SELECT 'SafeLink database configuration completed successfully!' AS status;
