@@ -323,17 +323,37 @@
   <script>
     // Read dynamic coordinates and user name from URL query parameters
     const params = new URLSearchParams(window.location.search);
+    const hasIncidentCoords = params.has('lat') && params.has('lng');
+    const incidentId = params.get('id') || params.get('session');
     let curLat = parseFloat(params.get('lat') || '-1.292100');
     let curLng = parseFloat(params.get('lng') || '36.821900');
-    const userName = params.get('name') || 'Joy';
+    const userName = params.get('name') || (hasIncidentCoords ? 'SafeGuard User' : '');
     const mapboxToken = 'pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA';
 
-    // Update DOM
-    document.title = `SafeGuard 3D Live Emergency Tracking - ${userName}`;
-    document.getElementById('title-name').innerHTML = `⚠️ ${userName} needs help!`;
-    document.getElementById('val-lat').innerText = curLat.toFixed(6);
-    document.getElementById('val-lng').innerText = curLng.toFixed(6);
-    document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLng}`;
+    // Update DOM based on whether an incident link was opened or raw homepage
+    if (hasIncidentCoords) {
+      document.title = `SafeGuard 3D Live Emergency Tracking - ${userName}`;
+      document.getElementById('title-name').innerHTML = `⚠️ ${userName} needs help!`;
+      document.getElementById('badge-status').innerHTML = '<span style="font-size:8px;">●</span> SOS ACTIVE';
+      document.getElementById('badge-status').style.background = '#ef4444';
+      document.getElementById('val-lat').innerText = curLat.toFixed(6);
+      document.getElementById('val-lng').innerText = curLng.toFixed(6);
+      document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLng}`;
+    } else {
+      document.title = 'SafeGuard 3D Emergency Telemetry Portal';
+      document.getElementById('title-name').innerHTML = '🛡️ SafeGuard Telemetry Portal';
+      document.getElementById('badge-status').innerHTML = '<span style="font-size:8px;">●</span> SYSTEM READY';
+      document.getElementById('badge-status').style.background = '#10b981';
+      document.getElementById('badge-status').style.animation = 'none';
+      document.querySelector('.subtext').innerHTML = 'Awaiting active incident beacon or session link';
+      document.getElementById('val-lat').innerText = '0.000000';
+      document.getElementById('val-lng').innerText = '0.000000';
+      document.getElementById('last-updated').innerText = 'STANDBY';
+      document.getElementById('dist-pill').innerHTML = '🔒 No active coordinates. Tap a link from your emergency SMS.';
+      document.getElementById('nav-btn').innerHTML = '🧪 Demo Incident';
+      document.getElementById('nav-btn').href = '?lat=-1.292100&lng=36.821900&name=Joy+Chepchumba&id=DEMO-SOS-001';
+      document.getElementById('nav-btn').target = '_self';
+    }
 
     let mapboxMap = null;
     let mapboxMarker = null;
