@@ -415,16 +415,40 @@
           container: 'mapbox-map',
           style: 'mapbox://styles/mapbox/dark-v11',
           center: [curLng, curLat],
-          zoom: 16.5,
-          pitch: 55,
-          bearing: -15,
+          zoom: 16.8,
+          pitch: 62,
+          bearing: -25,
           antialias: true
         });
 
         mapboxMap.on('load', () => {
           hideLoader();
 
-          // Add 3D building layer
+          // 1. Add 3D Digital Elevation Model (DEM) Terrain
+          try {
+            mapboxMap.addSource('mapbox-dem', {
+              'type': 'raster-dem',
+              'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
+              'tileSize': 512,
+              'maxzoom': 14
+            });
+            mapboxMap.setTerrain({ 'source': 'mapbox-dem', 'exaggeration': 1.6 });
+          } catch (e) {
+            console.warn('DEM Terrain note:', e);
+          }
+
+          // 2. Add Realistic 3D Atmosphere / Sky Fog
+          try {
+            mapboxMap.setFog({
+              'range': [0.5, 10],
+              'color': '#0b0f19',
+              'horizon-blend': 0.15,
+              'high-color': '#1e1b4b',
+              'space-color': '#030712'
+            });
+          } catch (e) {}
+
+          // 3. Add Volumetric 3D Buildings with intelligent height fallback
           const layers = mapboxMap.getStyle().layers;
           const labelLayerId = layers.find(l => l.type === 'symbol' && l.layout['text-field'])?.id;
 
@@ -434,27 +458,34 @@
             'source-layer': 'building',
             filter: ['==', 'extrude', 'true'],
             type: 'fill-extrusion',
-            minzoom: 15,
+            minzoom: 14,
             paint: {
-              'fill-extrusion-color': '#1e293b',
-              'fill-extrusion-height': ['get', 'height'],
-              'fill-extrusion-base': ['get', 'min_height'],
-              'fill-extrusion-opacity': 0.85
+              // Glowing neon/architectural tinting graded by height
+              'fill-extrusion-color': [
+                'interpolate', ['linear'], ['coalesce', ['get', 'height'], 20],
+                0, '#1e293b',
+                15, '#2563eb',
+                30, '#0284c7',
+                60, '#06b6d4',
+                100, '#38bdf8'
+              ],
+              'fill-extrusion-height': [
+                'interpolate', ['linear'], ['zoom'],
+                14, 0,
+                14.5, ['coalesce', ['get', 'height'], 20]
+              ],
+              'fill-extrusion-base': ['coalesce', ['get', 'min_height'], 0],
+              'fill-extrusion-opacity': 0.92
             }
           }, labelLayerId);
 
-          // Add SOS Radar Marker
+          // 4. Add SOS Radar Marker
           mapboxMarker = new mapboxgl.Marker({
             element: createMarkerElement(),
             anchor: 'center'
           })
           .setLngLat([curLng, curLat])
           .addTo(mapboxMap);
-        });
-
-        mapboxMap.on('error', (e) => {
-          console.warn('Mapbox error:', e);
-          switchToLeaflet('Mapbox error fallback');
         });
 
       } catch (err) {
