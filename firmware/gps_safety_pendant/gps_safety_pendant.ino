@@ -509,6 +509,14 @@ bool syncContactsFromSupabase() {
       String name  = jsonExtract(objStr, "contact_name");
 
       if (phone.length() >= 7) {
+        // Keep helpline in database, but bypass queuing for automated cellular SMS during testing
+        if (phone.indexOf("709570000") != -1 || name.indexOf("Police") != -1) {
+          Serial.printf("  [HELPLINE] %s (%s) registered in database. SIM800L auto-SMS bypassed for testing safety.\n",
+                        phone.c_str(), name.c_str());
+          curPos = objEnd + 1;
+          continue;
+        }
+
         foundCount++;
         if (foundCount == 1) {
           contact1 = phone;
@@ -654,6 +662,13 @@ bool logAlertToSupabase(const String &lat, const String &lon, const String &smsT
 // ------------------------------------------------------------------------------
 bool sendSMS(const String &number, const String &text) {
   if (number.length() < 7) return false;
+
+  // SAFETY GUARD: Never transmit live cellular SMS to official emergency helpline during testing
+  if (number.indexOf("709570000") != -1 || number.indexOf("999") != -1 || number.indexOf("112") != -1) {
+    Serial.printf("[SAFETY GUARD] Bypassed cellular SMS to official helpline (%s) during breadboard testing.\n", number.c_str());
+    return true; // Marked as safely handled
+  }
+
   Serial.printf("[SMS] Sending to %s...\n", number.c_str());
 
   // 1. Drain any residual bytes in UART buffer before starting SMS command
@@ -753,6 +768,10 @@ void testSMS() {
 void callNumber() {
   if (contact1.length() < 7) {
     Serial.println(F("No phone number configured for Contact 1"));
+    return;
+  }
+  if (contact1.indexOf("709570000") != -1 || contact1.indexOf("999") != -1 || contact1.indexOf("112") != -1) {
+    Serial.println(F("[SAFETY GUARD] Call to official emergency helpline suppressed during testing."));
     return;
   }
   Serial.printf("Calling %s...\n", contact1.c_str());
