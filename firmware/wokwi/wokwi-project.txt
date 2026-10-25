@@ -1,0 +1,27 @@
+SafeGuard GPS Safety Pendant — Wokwi VS Code Simulation
+Board: ESP32-C3 DevKitM-1 (Arduino framework)
+Author: Joy Kipkemboi — Strathmore University
+
+Hardware Components (diagram.json):
+  - GY-NEO6MV2 GPS Module   → UART1  RX=GPIO6, TX=GPIO7
+  - SIM800L GSM Module      → UART2  RX=GPIO4, TX=GPIO5
+  - MPR121 Touch Sensor     → I2C    SDA=GPIO2, SCL=GPIO3, addr=0x5A
+  (No LED on this hardware revision)
+
+Alert Channels Simulated:
+  1. SMS → user's personal emergency contacts (BLE-provisioned)
+  2. SMS → Nisikilize GBV helpline: 1195  (free 24/7)
+  3. SMS → Kenya Police: 999 / 112
+  4. HTTP POST → backend /alert/pendant via GSM GPRS
+  5. BLE Beacon → SafeGuard app community responders within ~30m
+
+To run in VS Code:
+  1. Install the Wokwi VS Code extension (wokwi.wokwi-vscode)
+  2. Open this folder (firmware/wokwi/) in VS Code
+  3. Press F1 → "Wokwi: Start Simulator"
+  4. Watch the Serial Monitor for the full boot + alert sequence
+
+To trigger the alert:
+  - Double-tap electrode 0 on the MPR121 widget
+  - Wait 10s (or long-press >3s to cancel)
+  - Watch all 5 channels fire in the Serial Monitor

@@ -50,6 +50,35 @@ class NotificationService {
     );
   }
 
+  Future<void> showForegroundMonitoringNotification({bool voiceEnabled = true, bool shakeEnabled = true}) async {
+    final List<String> activeFeatures = [];
+    if (voiceEnabled) activeFeatures.add("Voice SOS");
+    if (shakeEnabled) activeFeatures.add("Shake SOS");
+    final activeStr = activeFeatures.isNotEmpty ? activeFeatures.join(" & ") : "Standby";
+
+    final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      'safeguard_foreground_channel',
+      'SafeGuard Active Protection',
+      channelDescription: 'Keeps Voice & Shake emergency detection running in the background',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: false,
+    );
+    final NotificationDetails details = NotificationDetails(android: androidDetails);
+    await _plugin.show(
+      id: 999,
+      title: 'SafeGuard Active Protection',
+      body: 'Monitoring in background: $activeStr',
+      notificationDetails: details,
+    );
+  }
+
+  Future<void> cancelForegroundMonitoring() async {
+    await _plugin.cancel(id: 999);
+  }
+
   Future<void> cancelAll() async {
     await _plugin.cancelAll();
   }

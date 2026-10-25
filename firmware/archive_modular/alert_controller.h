@@ -1,11 +1,15 @@
 #ifndef ALERT_CONTROLLER_H
 #define ALERT_CONTROLLER_H
 
+#include <Arduino.h>
 #include "touch_sensor.h"
 #include "gps_module.h"
 #include "gsm_module.h"
 #include "ble_beacon.h"
 #include "led_controller.h"
+#ifdef ENABLE_VOICE_ACTIVATION
+#include "voice_detector.h"
+#endif
 
 enum AlertState {
     STATE_IDLE,
@@ -27,6 +31,9 @@ private:
     GsmModule gsm;
     BleBeacon ble;
     LedController led;
+#ifdef ENABLE_VOICE_ACTIVATION
+    VoiceDetector voice;
+#endif
     
     AlertState state = STATE_IDLE;
     unsigned long stateEnterTime = 0;

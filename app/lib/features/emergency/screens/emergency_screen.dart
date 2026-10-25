@@ -16,7 +16,10 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EmergencyController>().trigger(TriggerMethod.button);
+      final controller = context.read<EmergencyController>();
+      if (controller.state != EmergencyState.countdown && controller.state != EmergencyState.sending) {
+        controller.trigger(TriggerMethod.button);
+      }
     });
   }
 
@@ -28,7 +31,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
       backgroundColor: AppColors.background,
       body: SafeArea(
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
+          duration: const Duration(milliseconds: 300),
           child: _buildStateContent(controller),
         ),
       ),
@@ -54,100 +57,192 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
   }
 
   Widget _buildCountdown(EmergencyController controller) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Text(
-          'SENDING SOS IN',
-          style: TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
-        ),
-        const SizedBox(height: 40),
-        Center(
-          child: Container(
-            width: 220,
-            height: 220,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.primary,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.5),
-                  blurRadius: 50,
-                  spreadRadius: 15,
+    final isShake = controller.lastTriggerMethod == TriggerMethod.appShake;
+    final isVoice = controller.lastTriggerMethod == TriggerMethod.voiceKeyword;
+    final isPendant = controller.lastTriggerMethod == TriggerMethod.pendantTouch;
+
+    return Center(
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (isShake) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.sosRed.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.sosRed.withValues(alpha: 0.4)),
                 ),
-              ],
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.vibration_rounded, color: AppColors.sosRed, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'SHAKE DETECTED',
+                      style: TextStyle(
+                        color: AppColors.sosRed,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ] else if (isVoice) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.sosRed.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.sosRed.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mic_rounded, color: AppColors.sosRed, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'VOICE KEYWORD DETECTED',
+                      style: TextStyle(
+                        color: AppColors.sosRed,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ] else if (isPendant) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.sosRed.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.sosRed.withValues(alpha: 0.4)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.bluetooth_connected_rounded, color: AppColors.sosRed, size: 18),
+                    SizedBox(width: 6),
+                    Text(
+                      'PENDANT SOS ACTIVATED',
+                      style: TextStyle(
+                        color: AppColors.sosRed,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            const Text(
+              'SENDING SOS IN',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 2,
+              ),
             ),
-            child: Center(
-              child: Text(
-                '${controller.countdownSeconds}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 84,
-                  fontWeight: FontWeight.bold,
+            const SizedBox(height: 28),
+            Container(
+              width: 190,
+              height: 190,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primary,
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.45),
+                    blurRadius: 40,
+                    spreadRadius: 10,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  '${controller.countdownSeconds}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 80,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ),
-          ),
+            const SizedBox(height: 40),
+            OutlinedButton(
+              onPressed: () => controller.cancel(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: AppColors.border, width: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+              ),
+              child: const Text(
+                AppStrings.cancelBtn,
+                style: TextStyle(fontSize: 16, letterSpacing: 1.5, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 60),
-        OutlinedButton(
-          onPressed: () => controller.cancel(),
-          style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.white,
-            side: const BorderSide(color: Colors.white, width: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-          ),
-          child: const Text(
-            AppStrings.cancelBtn,
-            style: TextStyle(fontSize: 18, letterSpacing: 2, fontWeight: FontWeight.bold),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildSending() {
     return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: AppColors.primary),
-          SizedBox(height: 24),
-          Text(
-            AppStrings.sendingAlert,
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 18),
-          ),
-        ],
+      child: SingleChildScrollView(
+        padding: EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.primary),
+            SizedBox(height: 24),
+            Text(
+              AppStrings.sendingAlert,
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildSent(EmergencyController controller) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.check_circle, color: AppColors.success, size: 100),
+            const Icon(Icons.check_circle, color: AppColors.success, size: 84),
             const SizedBox(height: 20),
             const Text(
               AppStrings.emergencyAlertSent,
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 26, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             const Text(
-              'Emergency contacts and nearby community responders have been alerted.',
+              'Emergency contacts and nearby community responders have been alerted with your real-time GPS coordinates.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.4),
             ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 36),
             ElevatedButton(
               onPressed: () {
                 if (controller.activeEvent != null) {
@@ -157,10 +252,10 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.success,
-                padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 15),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
-              child: const Text('I am safe', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text('I am safe', style: TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -170,26 +265,27 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
 
   Widget _buildFailed(EmergencyController controller) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.error_outline, color: AppColors.error, size: 90),
+            const Icon(Icons.error_outline, color: AppColors.error, size: 80),
             const SizedBox(height: 20),
             const Text(
               'Failed to send alert',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 36),
             ElevatedButton(
               onPressed: () => controller.trigger(TriggerMethod.button),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 44, vertical: 15),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
-              child: const Text('Retry Alert', style: TextStyle(fontSize: 18, color: Colors.white)),
+              child: const Text('Retry Alert', style: TextStyle(fontSize: 16, color: Colors.white)),
             ),
           ],
         ),
@@ -198,10 +294,20 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
   }
 
   Widget _buildCancelled() {
-    return const Center(
-      child: Text(
-        'Alert Cancelled',
-        style: TextStyle(color: AppColors.textSecondary, fontSize: 22),
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: const [
+            Icon(Icons.cancel_outlined, color: AppColors.textSecondary, size: 70),
+            SizedBox(height: 16),
+            Text(
+              'Alert Cancelled',
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -90,11 +90,12 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               const SizedBox(height: 16),
               Center(
                 child: Container(
@@ -196,6 +197,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

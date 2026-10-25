@@ -25,10 +25,11 @@ try {
 if (-not $ngrokUrl) {
     Write-Host "      ngrok not detected on port 4040. Starting background ngrok..." -ForegroundColor DarkGray
     $npmNgrok = "$env:APPDATA\npm\node_modules\ngrok\bin\ngrok.exe"
+    $ngrokArgs = "http 8000 --url=unpaved-coherent-encroach.ngrok-free.dev"
     if (Test-Path $npmNgrok) {
-        Start-Process $npmNgrok -ArgumentList "http 8000" -WindowStyle Minimized
+        Start-Process $npmNgrok -ArgumentList $ngrokArgs -WindowStyle Minimized
     } else {
-        Start-Process "cmd.exe" -ArgumentList "/c ngrok http 8000" -WindowStyle Minimized
+        Start-Process "cmd.exe" -ArgumentList "/c ngrok $ngrokArgs" -WindowStyle Minimized
     }
 
     $attempts = 0
@@ -45,8 +46,8 @@ if (-not $ngrokUrl) {
 if ($ngrokUrl) {
     Write-Host "      Live Tunnel: $ngrokUrl" -ForegroundColor Green
 } else {
-    $ngrokUrl = "http://localhost:8000"
-    Write-Host "      Using default: $ngrokUrl" -ForegroundColor DarkGray
+    $ngrokUrl = "https://unpaved-coherent-encroach.ngrok-free.dev"
+    Write-Host "      Using default: $ngrokUrl" -ForegroundColor Green
 }
 
 # 2. Read .env credentials

@@ -7,8 +7,9 @@ void AlertController::begin() {
     gsm.begin();
     ble.begin(BLE_DEVICE_NAME);
     
-    // Edge Impulse model init stub
-    // e.g. run_classifier_init();
+#ifdef ENABLE_VOICE_ACTIVATION
+    voice.begin();
+#endif
     
     changeState(STATE_IDLE);
 }
@@ -17,6 +18,9 @@ void AlertController::update() {
     touch.update();
     gps.update();
     led.update();
+#ifdef ENABLE_VOICE_ACTIVATION
+    voice.update();
+#endif
     
     unsigned long now = millis();
     
@@ -25,6 +29,12 @@ void AlertController::update() {
             if (touch.isAlertPattern()) {
                 changeState(STATE_TRIGGERED);
             }
+#ifdef ENABLE_VOICE_ACTIVATION
+            else if (voice.isWakeWordDetected()) {
+                Serial.println("[ALERT] Emergency triggered via Voice Activation!");
+                changeState(STATE_TRIGGERED);
+            }
+#endif
             break;
             
         case STATE_TRIGGERED:

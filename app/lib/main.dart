@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'core/services/background_protection_service.dart';
 
 import 'core/constants/app_colors.dart';
 import 'core/config/supabase_config.dart';
 import 'core/di/service_locator.dart';
+import 'core/navigation/navigation_service.dart';
 
 import 'features/auth/controllers/auth_controller.dart';
 import 'features/home/controllers/home_controller.dart';
@@ -18,11 +21,11 @@ import 'features/auth/screens/splash_screen.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/auth/screens/register_screen.dart';
 import 'features/auth/screens/mfa_verify_screen.dart';
-import 'features/auth/screens/mfa_setup_screen.dart';
 import 'features/auth/screens/reset_password_screen.dart';
 import 'features/auth/screens/verify_otp_screen.dart';
 import 'features/home/screens/home_screen.dart';
 import 'features/emergency/screens/emergency_screen.dart';
+import 'features/emergency/screens/voice_settings_screen.dart';
 import 'features/contacts/screens/contacts_screen.dart';
 import 'features/map/screens/map_screen.dart';
 import 'features/wearable/screens/wearable_screen.dart';
@@ -33,8 +36,11 @@ import 'features/profile/screens/profile_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterForegroundTask.initCommunicationPort();
+  BackgroundProtectionService.init();
   await SupabaseConfig.initialize();
   await setupServiceLocator();
+  sl<EmergencyController>(); // create eagerly so shake/voice are armed on every page
 
   runApp(const SafeGuardApp());
 }
@@ -48,13 +54,14 @@ class SafeGuardApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => sl<AuthController>()),
         ChangeNotifierProvider(create: (_) => sl<HomeController>()),
-        ChangeNotifierProvider(create: (_) => sl<EmergencyController>()),
+        ChangeNotifierProvider(lazy: false, create: (_) => sl<EmergencyController>()),
         ChangeNotifierProvider(create: (_) => sl<ContactsController>()),
         ChangeNotifierProvider(create: (_) => sl<MapController>()),
         ChangeNotifierProvider(create: (_) => sl<WearableController>()),
         ChangeNotifierProvider(create: (_) => sl<AlertController>()),
       ],
       child: MaterialApp(
+        navigatorKey: NavigationService.navigatorKey,
         title: 'SafeLink',
         debugShowCheckedModeBanner: false,
         theme: ThemeData.light().copyWith(
@@ -86,7 +93,8 @@ class SafeGuardApp extends StatelessWidget {
           '/login': (context) => const LoginScreen(),
           '/register': (context) => const RegisterScreen(),
           '/mfa-verify': (context) => const MfaVerifyScreen(),
-          '/mfa-setup': (context) => const MfaSetupScreen(),
+          '/mfa-setup': (context) => const VoiceSettingsScreen(),
+          '/voice-settings': (context) => const VoiceSettingsScreen(),
           '/reset-password': (context) => const ResetPasswordScreen(),
           '/home': (context) => const HomeScreen(),
           '/emergency': (context) => const EmergencyScreen(),

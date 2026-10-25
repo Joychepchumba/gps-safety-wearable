@@ -14,6 +14,9 @@ Write-Host "   SafeLink Mobile App Auto-Launcher                      " -Foregro
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host ""
 
+$staticDomain = "unpaved-coherent-encroach.ngrok-free.dev"
+$staticUrl = "https://$staticDomain"
+
 # 1. Fetch live ngrok URL
 Write-Host "[1/3] Getting live ngrok tunnel..." -ForegroundColor Yellow
 $ngrokUrl = $null
@@ -22,13 +25,22 @@ try {
     $ngrokUrl = ($tunnels.tunnels | Where-Object { $_.proto -eq "https" } | Select-Object -First 1).public_url
 } catch {}
 
+# If an old random tunnel is active, stop it
+if ($ngrokUrl -and -not $ngrokUrl.Contains($staticDomain)) {
+    Write-Host "      Detected old random tunnel ($ngrokUrl). Stopping old process..." -ForegroundColor Yellow
+    Stop-Process -Name "ngrok" -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    $ngrokUrl = $null
+}
+
 if (-not $ngrokUrl) {
-    Write-Host "      ngrok not detected on port 4040. Starting background ngrok..." -ForegroundColor DarkGray
+    Write-Host "      Starting background ngrok tunnel with domain: $staticDomain..." -ForegroundColor DarkGray
     $npmNgrok = "$env:APPDATA\npm\node_modules\ngrok\bin\ngrok.exe"
+    $ngrokArgs = "http 8000 --url=$staticDomain"
     if (Test-Path $npmNgrok) {
-        Start-Process $npmNgrok -ArgumentList "http 8000" -WindowStyle Minimized
+        Start-Process $npmNgrok -ArgumentList $ngrokArgs -WindowStyle Minimized
     } else {
-        Start-Process "cmd.exe" -ArgumentList "/c ngrok http 8000" -WindowStyle Minimized
+        Start-Process "cmd.exe" -ArgumentList "/c ngrok $ngrokArgs" -WindowStyle Minimized
     }
 
     $attempts = 0
@@ -42,17 +54,17 @@ if (-not $ngrokUrl) {
     }
 }
 
-if ($ngrokUrl) {
-    Write-Host "      Live Tunnel: $ngrokUrl" -ForegroundColor Green
-} else {
-    $ngrokUrl = "http://localhost:8000"
-    Write-Host "      Using default: $ngrokUrl" -ForegroundColor DarkGray
+if (-not $ngrokUrl) {
+    $ngrokUrl = $staticUrl
 }
+Write-Host "      Live Static Tunnel: $ngrokUrl" -ForegroundColor Green
 
 # 2. Read .env credentials
 $envFile = "$root\.env"
 $supabaseUrl = "https://afagwdhpjnnbueiyjmde.supabase.co"
 $supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmYWd3ZGhwam5uYnVlaXlqbWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTkzMzUsImV4cCI6MjEwNTQ5NTMzNX0.Qw_rs_KJOZF8RkXWW62QBKnSafzJFkt9YBPqCRo9mlA"
+
+$mapboxToken = "pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA"
 
 if (Test-Path $envFile) {
     Get-Content $envFile | ForEach-Object {
@@ -63,6 +75,7 @@ if (Test-Path $envFile) {
             $v = $parts[1].Trim().Trim("'").Trim('"')
             if ($k -eq "SUPABASE_URL") { $supabaseUrl = $v }
             if ($k -eq "SUPABASE_ANON_KEY") { $supabaseAnonKey = $v }
+            if ($k -eq "MAPBOX_TOKEN" -or $k -eq "MAPBOX_WEB_TOKEN" -or $k -eq "MAPBOX_ACCESS_TOKEN") { $mapboxToken = $v }
         }
     }
 }
@@ -91,7 +104,8 @@ $cmdArgs = @(
     "run",
     "--dart-define=SUPABASE_URL=$supabaseUrl",
     "--dart-define=SUPABASE_ANON_KEY=$supabaseAnonKey",
-    "--dart-define=BACKEND_URL=$ngrokUrl"
+    "--dart-define=BACKEND_URL=$ngrokUrl",
+    "--dart-define=MAPBOX_TOKEN=$mapboxToken"
 )
 
 if ($phoneId) {

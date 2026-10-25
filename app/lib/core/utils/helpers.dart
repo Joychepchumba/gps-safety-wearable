@@ -2,13 +2,32 @@ import 'dart:math';
 
 class Helpers {
   static String formatPhone(String raw) {
-    raw = raw.trim();
-    if (raw.startsWith('0')) {
-      return '+254${raw.substring(1)}';
-    } else if (raw.startsWith('254')) {
-      return '+$raw';
+    if (raw.contains(',')) {
+      return raw
+          .split(',')
+          .map((p) => formatSinglePhone(p))
+          .where((p) => p.isNotEmpty)
+          .join(',');
     }
-    return raw;
+    return formatSinglePhone(raw);
+  }
+
+  static String formatSinglePhone(String raw) {
+    String clean = raw.replaceAll(RegExp(r'[\s\-\(\)\.]'), '').trim();
+    if (clean.isEmpty) return '';
+    if (clean.startsWith('+')) {
+      return clean;
+    }
+    if (clean.startsWith('0') && clean.length == 10) {
+      return '+254${clean.substring(1)}';
+    }
+    if (clean.startsWith('254') && clean.length == 12) {
+      return '+$clean';
+    }
+    if (clean.length == 9) {
+      return '+254$clean';
+    }
+    return clean.startsWith('+') ? clean : '+$clean';
   }
 
   static String buildLocationUrl(double lat, double lng) {

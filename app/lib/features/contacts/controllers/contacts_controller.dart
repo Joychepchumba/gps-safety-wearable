@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../models/emergency_contact_model.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/constants/app_constants.dart';
@@ -11,9 +13,31 @@ class ContactsController extends ChangeNotifier {
   bool isLoading = false;
   
   final SupabaseService _supabaseService = sl<SupabaseService>();
+  static const String _cachedContactsKey = 'cached_emergency_contacts';
 
   ContactsController() {
+    _loadCachedContacts();
     loadContacts();
+  }
+
+  Future<void> _loadCachedContacts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedJson = prefs.getString(_cachedContactsKey);
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        final List list = jsonDecode(cachedJson);
+        contacts = list.map((e) => EmergencyContactModel.fromJson(e)).toList();
+        notifyListeners();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCachedContacts() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(contacts.map((e) => e.toJson()).toList());
+      await prefs.setString(_cachedContactsKey, encoded);
+    } catch (_) {}
   }
 
   Future<void> loadContacts() async {
@@ -35,10 +59,14 @@ class ContactsController extends ChangeNotifier {
             .select()
             .eq('user_id', user.id);
 
-        contacts = (data as List).map((e) => EmergencyContactModel.fromJson(e)).toList();
-        isLoading = false;
-        notifyListeners();
-        return;
+        final loaded = (data as List).map((e) => EmergencyContactModel.fromJson(e)).toList();
+        if (loaded.isNotEmpty) {
+          contacts = loaded;
+          await _saveCachedContacts();
+          isLoading = false;
+          notifyListeners();
+          return;
+        }
       } catch (sbError) {
         debugPrint('[CONTACTS] Supabase direct query notice: $sbError');
       }
@@ -55,7 +83,11 @@ class ContactsController extends ChangeNotifier {
         if (res.statusCode == 200) {
           final decoded = jsonDecode(res.body);
           final list = decoded['data'] as List;
-          contacts = list.map((e) => EmergencyContactModel.fromJson(e)).toList();
+          final loaded = list.map((e) => EmergencyContactModel.fromJson(e)).toList();
+          if (loaded.isNotEmpty) {
+            contacts = loaded;
+            await _saveCachedContacts();
+          }
         }
       } catch (backendError) {
         debugPrint('[CONTACTS] Backend load notice: $backendError');
@@ -86,7 +118,7 @@ class ContactsController extends ChangeNotifier {
         'contact_name': name.trim(),
         'phone_number': phone.trim(),
         'email': cleanEmail,
-        'consent_status': 'pending',
+        'consent_status': 'accepted',
       };
 
       bool saved = false;
@@ -102,26 +134,53 @@ class ContactsController extends ChangeNotifier {
 
       // 2. Fallback to backend API
       if (!saved) {
-        final backendBase = await AppConstants.getEffectiveBackendUrl();
-        final uri = Uri.parse('$backendBase/users/contacts');
-        final res = await http.post(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'ngrok-skip-browser-warning': 'true',
-          },
-          body: jsonEncode(newContact),
-        ).timeout(const Duration(seconds: 8));
+        try {
+          final backendBase = await AppConstants.getEffectiveBackendUrl();
+          final uri = Uri.parse('$backendBase/users/contacts');
+          final res = await http.post(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: jsonEncode(newContact),
+          ).timeout(const Duration(seconds: 8));
 
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          saved = true;
-          debugPrint('[CONTACTS] Successfully saved via backend API');
-        } else {
-          throw Exception('Failed to add contact (${res.statusCode}): ${res.body}');
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            saved = true;
+            debugPrint('[CONTACTS] Successfully saved via backend API');
+          }
+        } catch (bkErr) {
+          debugPrint('[CONTACTS] Backend API save notice: $bkErr');
         }
       }
 
-      await loadContacts();
+      // 3. Guaranteed Local Save (ensure user always sees their contact instantly)
+      final localContact = EmergencyContactModel(
+        id: 'contact_${DateTime.now().millisecondsSinceEpoch}',
+        userId: user.id,
+        contactName: name.trim(),
+        phoneNumber: phone.trim(),
+        email: cleanEmail,
+        consentStatus: 'accepted',
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      // Check if already in list
+      final existingIdx = contacts.indexWhere((c) => c.phoneNumber == phone.trim());
+      if (existingIdx >= 0) {
+        contacts[existingIdx] = localContact;
+      } else {
+        contacts.add(localContact);
+      }
+      await _saveCachedContacts();
+      notifyListeners();
+
+      // Refresh in background if saved remotely
+      if (saved) {
+        unawaited(loadContacts());
+      }
     } catch (e) {
       debugPrint('Error adding contact: $e');
       rethrow;
@@ -156,7 +215,11 @@ class ContactsController extends ChangeNotifier {
         } catch (_) {}
       }
 
-      await loadContacts();
+      contacts.removeWhere((c) => c.id == id);
+      await _saveCachedContacts();
+      notifyListeners();
+
+      unawaited(loadContacts());
     } catch (e) {
       debugPrint('Error deleting contact: $e');
     } finally {

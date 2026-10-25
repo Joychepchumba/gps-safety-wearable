@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppConstants {
-  static const String policeNumber = '0800720999';
+  static const String policeNumber = '0721228989';
+  static const String policeVoiceNumber = '0800720999';
   static const double emergencyRadiusMeters = 1000.0;
   static const int panicCountdownSeconds = 10;
   static const int locationAnonymisationHours = 24;
@@ -10,10 +11,24 @@ class AppConstants {
   static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
   static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
 
-  static const String africasTalkingApiKey = String.fromEnvironment('AT_API_KEY', defaultValue: '');
-  static const String africasTalkingUsername = String.fromEnvironment('AT_USERNAME', defaultValue: 'sandbox');
+  static const String africasTalkingApiKey = String.fromEnvironment(
+    'AT_API_KEY',
+    defaultValue: 'atsk_f15a6b76484db0161cc2558bab88c2c590dda7cd85438f37ee1162513db42382f9f0e688',
+  );
+  static const String africasTalkingUsername = String.fromEnvironment(
+    'AT_USERNAME',
+    defaultValue: 'sandbox',
+  );
 
-  static const String backendBaseUrl = String.fromEnvironment('BACKEND_URL', defaultValue: 'http://localhost:8000');
+  static const String mapboxToken = String.fromEnvironment(
+    'MAPBOX_TOKEN',
+    defaultValue: 'pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA',
+  );
+
+  static const String backendBaseUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: 'https://8331-105-164-105-145.ngrok-free.app',
+  );
 
   static String? _cachedDynamicBackendUrl;
 
@@ -45,5 +60,32 @@ class AppConstants {
 
   static const String bleServiceUUID = 'ffe0';
   static const String bleAlertCharUUID = 'ffe1';
+  static const String bleConfigCharUUID = 'ffe2';
+
+  /// Permanent, serverless 3D Mapbox live tracking viewer hosted on GitHub Pages
+  static const String trackingViewerBaseUrl = String.fromEnvironment(
+    'TRACKING_VIEWER_URL',
+    defaultValue: 'https://joychepchumba.github.io/gps-safety-wearable/track.html',
+  );
+
+  /// Builds a permanent 3D Mapbox live tracking link that doesn't rely on ngrok
+  static String buildLiveTrackingUrl({
+    required double lat,
+    required double lng,
+    String? name,
+    String? session,
+    String? alertId,
+  }) {
+    final queryParams = <String, String>{
+      'lat': lat.toStringAsFixed(6),
+      'lng': lng.toStringAsFixed(6),
+    };
+    if (name != null && name.isNotEmpty) queryParams['name'] = name;
+    if (session != null && session.isNotEmpty) queryParams['session'] = session;
+    if (alertId != null && alertId.isNotEmpty) queryParams['id'] = alertId;
+
+    final uri = Uri.parse(trackingViewerBaseUrl).replace(queryParameters: queryParams);
+    return uri.toString();
+  }
 }
 

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../constants/app_constants.dart';
+import '../di/service_locator.dart';
+import 'location_service.dart';
 
 class BleService {
   final StreamController<bool> _pendantDetectedController = StreamController<bool>.broadcast();
@@ -40,13 +42,24 @@ class BleService {
     for (BluetoothService service in services) {
       if (service.uuid.toString().toLowerCase() == AppConstants.bleServiceUUID) {
         for (BluetoothCharacteristic c in service.characteristics) {
-          if (c.uuid.toString().toLowerCase() == AppConstants.bleAlertCharUUID) {
+          if (c.uuid.toString().toLowerCase() == AppConstants.bleAlertCharUUID ||
+              c.uuid.toString().toLowerCase().contains(AppConstants.bleAlertCharUUID)) {
             await c.setNotifyValue(true);
             c.onValueReceived.listen((value) {
               if (value.isNotEmpty && value[0] == 1) {
                 _pendantAlertController.add(true);
               }
             });
+          }
+          if (c.uuid.toString().toLowerCase() == AppConstants.bleConfigCharUUID ||
+              c.uuid.toString().toLowerCase().contains(AppConstants.bleConfigCharUUID)) {
+            try {
+              final locService = sl<LocationService>();
+              final pos = await locService.getCurrentPosition();
+              if (pos != null) {
+                await c.write('LOC:${pos.latitude},${pos.longitude}'.codeUnits);
+              }
+            } catch (_) {}
           }
         }
       }

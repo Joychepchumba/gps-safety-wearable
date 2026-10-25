@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import '../../../models/user_model.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/di/service_locator.dart';
+import '../../../core/navigation/navigation_service.dart';
 
 enum AuthStatus {
   initial,
@@ -18,6 +20,7 @@ enum AuthStatus {
 
 class AuthController extends ChangeNotifier {
   final SupabaseService _supabaseService = sl<SupabaseService>();
+  StreamSubscription<AuthState>? _authSub;
 
   AuthStatus _status = AuthStatus.initial;
   AuthStatus get status => _status;
@@ -28,6 +31,43 @@ class AuthController extends ChangeNotifier {
 
   // Pending MFA data when user logs in with AAL1 but requires AAL2
   String? pendingMfaFactorId;
+
+  AuthController() {
+    _listenToAuthChanges();
+  }
+
+  void _listenToAuthChanges() {
+    _authSub = _supabaseService.authStateChanges.listen((data) async {
+      final AuthChangeEvent event = data.event;
+      final Session? session = data.session;
+      debugPrint('[AUTH] AuthState changed: event=$event, user=${session?.user.id}');
+
+      if (event == AuthChangeEvent.signedIn && session?.user != null) {
+        final user = session!.user;
+        currentUser = await _supabaseService.fetchUserProfile(user.id) ??
+            UserModel(
+              id: user.id,
+              fullName: user.userMetadata?['full_name'] as String? ??
+                  user.userMetadata?['name'] as String? ??
+                  'SafeLink User',
+              phoneNumber: user.userMetadata?['phone'] as String? ?? '',
+              email: user.email ?? '',
+              isCommunityResponder: user.userMetadata?['is_community_responder'] as bool? ?? false,
+              hasWearable: false,
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+            );
+        _status = AuthStatus.authenticated;
+        notifyListeners();
+        NavigationService.pushNamedAndRemoveUntil('/home', (route) => false);
+      } else if (event == AuthChangeEvent.signedOut) {
+        currentUser = null;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        NavigationService.pushNamedAndRemoveUntil('/login', (route) => false);
+      }
+    });
+  }
 
   void clearError() {
     errorMessage = null;
@@ -146,12 +186,25 @@ class AuthController extends ChangeNotifier {
 
   /// Sign In with Google via OAuth
   Future<void> signInWithGoogle(BuildContext ctx) async {
+    _status = AuthStatus.loading;
+    clearError();
+    notifyListeners();
+
     try {
-      await _supabaseService.signInWithGoogle();
+      final launched = await _supabaseService.signInWithGoogle();
+      if (!launched) {
+        throw Exception('Could not launch Google Sign-In.');
+      }
     } catch (e) {
+      errorMessage = _formatErrorMessage(e);
+      _status = AuthStatus.error;
+      notifyListeners();
       if (ctx.mounted) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('Google Sign-In: ${_formatErrorMessage(e)}')),
+          SnackBar(
+            content: Text('Google Sign-In: ${_formatErrorMessage(e)}'),
+            backgroundColor: Colors.redAccent,
+          ),
         );
       }
     }
@@ -562,5 +615,11 @@ class AuthController extends ChangeNotifier {
       return str.substring(11);
     }
     return str;
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 }

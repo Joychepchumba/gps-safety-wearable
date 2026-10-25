@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "author": "Joy Kipkemboi — Strathmore University",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "board-esp32-c3-devkitm-1",
+      "id": "esp",
+      "top": 0,
+      "left": 0,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btn_touch",
+      "top": -120,
+      "left": 160,
+      "attrs": {
+        "color": "red",
+        "label": "TTP223B Touch (GPIO2)"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_mic_bias",
+      "top": -30,
+      "left": 160,
+      "attrs": {
+        "value": "10000"
+      }
+    },
+    {
+      "type": "wokwi-analog-joystick",
+      "id": "mic1",
+      "top": 40,
+      "left": 170,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_spk",
+      "top": 170,
+      "left": 160,
+      "attrs": {
+        "value": "22"
+      }
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "spk1",
+      "top": 210,
+      "left": 170,
+      "attrs": {
+        "volume": "0.5"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_sim_tx1",
+      "top": 50,
+      "left": -160,
+      "attrs": {
+        "value": "1000"
+      }
+    },
+    {
+      "type": "wokwi-resistor",
+      "id": "r_sim_tx2",
+      "top": 100,
+      "left": -160,
+      "attrs": {
+        "value": "330"
+      }
+    }
+  ],
+  "connections": [
+    ["esp:TX", "$serialMonitor:RX", "", []],
+    ["esp:RX", "$serialMonitor:TX", "", []],
+
+    ["btn_touch:1.l", "esp:2", "purple", [ "h-20", "v50" ]],
+    ["btn_touch:2.l", "esp:3V3", "red", [ "h-30", "v80" ]],
+
+    ["r_mic_bias:1", "esp:3V3", "red", [ "h-20" ]],
+    ["r_mic_bias:2", "esp:1", "cyan", [ "h-20" ]],
+    ["mic1:VCC", "esp:3V3", "red", [ "h-30" ]],
+    ["mic1:GND", "esp:GND.5", "black", [ "h-30" ]],
+    ["mic1:VERT", "esp:1", "cyan", [ "h-30" ]],
+
+    ["esp:8", "r_spk:1", "orange", [ "h20" ]],
+    ["r_spk:2", "spk1:2", "orange", [ "v20" ]],
+    ["spk1:1", "esp:GND.6", "black", [ "h-30" ]],
+
+    ["esp:5", "r_sim_tx1:1", "magenta", [ "h-20" ]],
+    ["r_sim_tx1:2", "r_sim_tx2:1", "magenta", [ "v20" ]],
+    ["r_sim_tx2:2", "esp:GND.2", "black", [ "h20" ]]
+  ],
+  "dependencies": {}
+}

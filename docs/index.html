@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>SafeGuard 3D Live Emergency Tracking</title>
+  
+  <!-- Preconnect for fast mobile loading -->
+  <link rel="preconnect" href="https://api.mapbox.com" crossorigin />
+  <link rel="dns-prefetch" href="https://api.mapbox.com" />
+  <link rel="preconnect" href="https://events.mapbox.com" crossorigin />
+
+  <!-- Mapbox GL JS v3 -->
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+
+  <!-- Leaflet Fallback -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body, html {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #090d16; color: #f8fafc; overflow: hidden;
+    }
+    #mapbox-map, #leaflet-map {
+      position: absolute; top: 0; bottom: 0; width: 100%; height: 100%;
+    }
+    #leaflet-map { display: none; }
+
+    /* Telemetry Loader Overlay */
+    .loader-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: radial-gradient(circle at center, #0f172a 0%, #030712 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+      transition: opacity 0.4s ease, visibility 0.4s;
+    }
+    .loader-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .loader-spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .loader-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+      letter-spacing: 0.3px;
+    }
+    .loader-sub {
+      font-size: 12px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    /* Top Glass Card */
+    .emergency-card {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      max-width: 440px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(239, 68, 68, 0.45);
+      border-radius: 16px;
+      padding: 16px 18px;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65), 0 0 25px rgba(239, 68, 68, 0.2);
+      z-index: 100;
+      transition: all 0.3s ease;
+    }
+    .badge-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .badge-sos {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #ef4444;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      animation: pulse-badge 1.6s infinite;
+    }
+    @keyframes pulse-badge {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(0.97); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .status-text {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+    }
+    .status-text b {
+      color: #ef4444;
+    }
+    .person-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #ffffff;
+      margin: 0 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .subtext {
+      font-size: 13px;
+      color: #94a3b8;
+      margin: 0 0 10px;
+    }
+    .coords-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #38bdf8;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 7px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 8px;
+    }
+    .distance-pill {
+      font-size: 12px;
+      font-weight: 600;
+      color: #facc15;
+      background: rgba(234, 179, 8, 0.12);
+      border: 1px solid rgba(234, 179, 8, 0.3);
+      padding: 5px 10px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      display: none;
+    }
+    .btn-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    .btn-maps { background: #2563eb; color: #fff; }
+    .btn-maps:hover { background: #1d4ed8; }
+    .btn-call { background: #dc2626; color: #fff; }
+    .btn-call:hover { background: #b91c1c; }
+
+    /* Floating View Controls */
+    .map-controls-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 6px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 30px;
+      padding: 6px 10px;
+      z-index: 100;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+    .ctrl-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .ctrl-btn.active {
+      background: #3b82f6;
+      color: #ffffff;
+    }
+    .ctrl-btn:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+    }
+
+    /* Radar Beacon Marker */
+    .sos-marker-wrap {
+      width: 50px;
+      height: 50px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .sos-core {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ef4444;
+      border: 3px solid #ffffff;
+      box-shadow: 0 0 16px #ef4444, 0 0 32px #ef4444;
+      z-index: 5;
+    }
+    .sos-wave {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.4);
+      animation: sos-radar 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+    }
+    .sos-wave.delayed {
+      animation-delay: 1.1s;
+    }
+    @keyframes sos-radar {
+      0% { transform: scale(0.3); opacity: 1; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+
+    /* Engine pill */
+    .engine-pill {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 4px 8px;
+      border-radius: 6px;
+      z-index: 100;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader-overlay" class="loader-overlay">
+    <div class="loader-spinner"></div>
+    <div class="loader-text">Loading 3D Mapbox Telemetry...</div>
+    <div class="loader-sub">Acquiring live GPS satellite beacon</div>
+  </div>
+
+  <div id="mapbox-map"></div>
+  <div id="leaflet-map"></div>
+
+  <div class="engine-pill" id="engine-tag">⚡ Mapbox 3D</div>
+
+  <div class="emergency-card">
+    <div class="badge-row">
+      <span class="badge-sos" id="badge-status">
+        <span style="font-size:8px;">●</span> SOS ACTIVE
+      </span>
+      <span class="status-text">Distress: <b>HIGH PRIORITY</b></span>
+    </div>
+    <div class="person-title" id="title-name">⚠️ SafeGuard Distress Signal</div>
+    <div class="subtext">Real-time GPS emergency distress beacon</div>
+    
+    <div class="coords-bar">
+      <span>📍 <span id="val-lat">-1.292100</span>, <span id="val-lng">36.821900</span></span>
+      <span style="color:#64748b; font-size:11px;" id="last-updated">LIVE</span>
+    </div>
+
+    <div class="distance-pill" id="dist-pill">
+      🧭 Calculating your distance...
+    </div>
+
+    <div class="btn-actions">
+      <a class="btn btn-maps" id="nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=-1.292100,36.821900" target="_blank">
+        🚗 Navigate (Maps)
+      </a>
+      <a class="btn btn-call" href="tel:999">
+        📞 Call Police (999)
+      </a>
+    </div>
+  </div>
+
+  <div class="map-controls-bar">
+    <button class="ctrl-btn active" id="btn-3d" onclick="setMode('3d')">3D Buildings</button>
+    <button class="ctrl-btn" id="btn-2d" onclick="setMode('2d')">2D Street</button>
+    <button class="ctrl-btn" id="btn-sat" onclick="setMode('sat')">Satellite</button>
+    <button class="ctrl-btn" onclick="recenter()">🎯 Recenter</button>
+  </div>
+
+  <script>
+    // Read dynamic coordinates and user name from URL query parameters
+    const params = new URLSearchParams(window.location.search);
+    let curLat = parseFloat(params.get('lat') || '-1.292100');
+    let curLng = parseFloat(params.get('lng') || '36.821900');
+    const userName = params.get('name') || 'Joy';
+    const mapboxToken = 'pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA';
+
+    // Update DOM
+    document.title = `SafeGuard 3D Live Emergency Tracking - ${userName}`;
+    document.getElementById('title-name').innerHTML = `⚠️ ${userName} needs help!`;
+    document.getElementById('val-lat').innerText = curLat.toFixed(6);
+    document.getElementById('val-lng').innerText = curLng.toFixed(6);
+    document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLng}`;
+
+    let mapboxMap = null;
+    let mapboxMarker = null;
+    let leafletMap = null;
+    let leafletMarker = null;
+    let isLeafletActive = false;
+    let currentMode = '3d';
+
+    function hideLoader() {
+      const el = document.getElementById('loader-overlay');
+      if (el) el.classList.add('hidden');
+    }
+
+    function calcDistanceKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+
+    function trackViewerDistance() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const dKm = calcDistanceKm(pos.coords.latitude, pos.coords.longitude, curLat, curLng);
+          const pill = document.getElementById('dist-pill');
+          pill.style.display = 'block';
+          if (dKm < 1) {
+            pill.innerHTML = `📍 You are <b>${Math.round(dKm * 1000)} meters</b> away from ${userName}`;
+          } else {
+            pill.innerHTML = `📍 You are <b>${dKm.toFixed(1)} km</b> away from ${userName}`;
+          }
+        }, () => {});
+      }
+    }
+    trackViewerDistance();
+
+    function createMarkerElement() {
+      const el = document.createElement('div');
+      el.className = 'sos-marker-wrap';
+      el.innerHTML = '<div class="sos-wave"></div><div class="sos-wave delayed"></div><div class="sos-core"></div>';
+      return el;
+    }
+
+    function initMapbox() {
+      try {
+        if (!mapboxToken || typeof mapboxgl === 'undefined' || !mapboxgl.supported()) {
+          console.warn('Mapbox or WebGL unsupported; falling back to Leaflet');
+          switchToLeaflet('WebGL/Mapbox not available');
+          return;
+        }
+
+        mapboxgl.accessToken = mapboxToken;
+        mapboxMap = new mapboxgl.Map({
+          container: 'mapbox-map',
+          style: 'mapbox://styles/mapbox/dark-v11',
+          center: [curLng, curLat],
+          zoom: 16.5,
+          pitch: 55,
+          bearing: -15,
+          antialias: true
+        });
+
+        mapboxMap.on('load', () => {
+          hideLoader();
+
+          // Add 3D building layer
+          const layers = mapboxMap.getStyle().layers;
+          const labelLayerId = layers.find(l => l.type === 'symbol' && l.layout['text-field'])?.id;
+
+          mapboxMap.addLayer({
+            id: '3d-buildings',
+            source: 'composite',
+            'source-layer': 'building',
+            filter: ['==', 'extrude', 'true'],
+            type: 'fill-extrusion',
+            minzoom: 15,
+            paint: {
+              'fill-extrusion-color': '#1e293b',
+              'fill-extrusion-height': ['get', 'height'],
+              'fill-extrusion-base': ['get', 'min_height'],
+              'fill-extrusion-opacity': 0.85
+            }
+          }, labelLayerId);
+
+          // Add SOS Radar Marker
+          mapboxMarker = new mapboxgl.Marker({
+            element: createMarkerElement(),
+            anchor: 'center'
+          })
+          .setLngLat([curLng, curLat])
+          .addTo(mapboxMap);
+        });
+
+        mapboxMap.on('error', (e) => {
+          console.warn('Mapbox error:', e);
+          switchToLeaflet('Mapbox error fallback');
+        });
+
+      } catch (err) {
+        console.warn('Mapbox init error:', err);
+        switchToLeaflet('Mapbox init error');
+      }
+    }
+
+    function switchToLeaflet(reason) {
+      if (isLeafletActive) return;
+      isLeafletActive = true;
+      hideLoader();
+      document.getElementById('mapbox-map').style.display = 'none';
+      const leafEl = document.getElementById('leaflet-map');
+      leafEl.style.display = 'block';
+      document.getElementById('engine-tag').innerText = '🗺️ Leaflet High-Res';
+
+      leafletMap = L.map('leaflet-map', { zoomControl: false }).setView([curLat, curLng], 17);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap, © CARTO'
+      }).addTo(leafletMap);
+
+      const customIcon = L.divIcon({
+        className: 'custom-leaflet-icon',
+        html: '<div class="sos-marker-wrap"><div class="sos-wave"></div><div class="sos-core"></div></div>',
+        iconSize: [50, 50],
+        iconAnchor: [25, 25]
+      });
+
+      leafletMarker = L.marker([curLat, curLng], { icon: customIcon }).addTo(leafletMap);
+    }
+
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll('.ctrl-btn').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-' + mode);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      if (mapboxMap && !isLeafletActive) {
+        if (mode === '3d') {
+          mapboxMap.setStyle('mapbox://styles/mapbox/dark-v11');
+          mapboxMap.flyTo({ pitch: 55, bearing: -15, zoom: 16.5 });
+        } else if (mode === '2d') {
+          mapboxMap.setStyle('mapbox://styles/mapbox/streets-v12');
+          mapboxMap.flyTo({ pitch: 0, bearing: 0, zoom: 16 });
+        } else if (mode === 'sat') {
+          mapboxMap.setStyle('mapbox://styles/mapbox/satellite-streets-v12');
+          mapboxMap.flyTo({ pitch: 45, bearing: 0, zoom: 16.5 });
+        }
+      }
+    }
+
+    function recenter() {
+      if (mapboxMap && !isLeafletActive) {
+        mapboxMap.flyTo({ center: [curLng, curLat], zoom: 16.5, essential: true });
+      } else if (leafletMap) {
+        leafletMap.panTo([curLat, curLng]);
+      }
+    }
+
+    // Auto-timeout loader
+    setTimeout(hideLoader, 4000);
+
+    // Initialize Mapbox 3D
+    initMapbox();
+  </script>
+</body>
+</html>

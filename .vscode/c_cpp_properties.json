@@ -1,15 +1,27 @@
 {
     "configurations": [
         {
-            "name": "Win32",
+            "name": "ESP32-C3",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/firmware/**",
+                "${workspaceFolder}/firmware/gps_safety_pendant",
+                "${workspaceFolder}/firmware/libraries/**",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/3.3.12/cores/esp32",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/3.3.12/variants/esp32c3",
+                "${env:LOCALAPPDATA}/Arduino15/packages/esp32/hardware/esp32/3.3.12/libraries/**",
+                "${env:USERPROFILE}/Documents/Arduino/libraries/**",
+                "${env:USERPROFILE}/OneDrive/Documents/Arduino/libraries/**"
             ],
             "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
-            ]
+                "ESP32",
+                "ESP32C3",
+                "ARDUINO=10808",
+                "ARDUINO_ARCH_ESP32",
+                "ARDUINO_ESP32C3_DEV"
+            ],
+            "cStandard": "c11",
+            "cppStandard": "c++17"
         }
     ],
     "version": 4

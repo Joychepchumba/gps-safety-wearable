@@ -1,0 +1,12 @@
+# Wokwi simulation library requirements
+# Generated for: SafeGuard GPS Safety Pendant
+# MCU: ESP32-C3 Super Mini
+
+# GPS sentence parser — used for GY-NEO6MV2 UART output
+TinyGPS++=0.0.2
+
+# No library needed for TTP223B (plain digitalRead)
+# No library needed for electret microphone (plain analogRead)
+# No library needed for speaker/buzzer (built-in tone())
+# No library needed for SIM800L (raw HardwareSerial AT commands)
+# No library needed for BLE in simulation (Serial log prints beacon data)

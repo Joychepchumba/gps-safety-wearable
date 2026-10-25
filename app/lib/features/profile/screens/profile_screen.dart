@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/controllers/auth_controller.dart';
+import '../../emergency/controllers/emergency_controller.dart';
 import '../../../models/user_model.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -122,6 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
+    final emergencyController = context.watch<EmergencyController>();
     final user = authController.currentUser;
     _syncUserToControllers(user);
 
@@ -535,11 +537,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 10),
 
               _buildMenuCard(
-                icon: Icons.security_rounded,
-                iconColor: AppColors.success,
-                title: 'Security & Two-Factor Auth (MFA)',
-                subtitle: 'TOTP Authenticator app protection',
-                onTap: () => Navigator.pushNamed(context, '/mfa-setup'),
+                icon: Icons.record_voice_over_rounded,
+                iconColor: AppColors.primary,
+                title: 'Voice SOS Configuration & Training',
+                subtitle: 'Customize trigger phrase and test voice recognition',
+                onTap: () => Navigator.pushNamed(context, '/voice-settings'),
               ),
               const SizedBox(height: 10),
 
@@ -549,6 +551,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 title: 'Wearable Hardware Pairing',
                 subtitle: 'Pair physical smart pendant via BLE',
                 onTap: () => Navigator.pushNamed(context, '/wearable'),
+              ),
+              const SizedBox(height: 10),
+
+              _buildMenuCard(
+                icon: Icons.battery_saver_rounded,
+                iconColor: emergencyController.isBatterySaverEnabled ? Colors.orange : Colors.teal,
+                title: 'Battery & Power Optimization',
+                subtitle: 'Smart GPS standby, 15Hz sensors & power saving',
+                badge: emergencyController.isBatterySaverEnabled ? 'SAVER ON' : 'OPTIMIZED',
+                onTap: () => _showBatteryOptimizationSheet(context, emergencyController),
               ),
               const SizedBox(height: 28),
 
@@ -661,6 +673,234 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: AppColors.textMuted),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showBatteryOptimizationSheet(BuildContext context, EmergencyController controller) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final isSaver = controller.isBatterySaverEnabled;
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: (isSaver ? Colors.orange : Colors.teal).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          isSaver ? Icons.battery_saver_rounded : Icons.eco_rounded,
+                          color: isSaver ? Colors.orange.shade800 : Colors.teal.shade800,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Battery & Power Management',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            Text(
+                              isSaver ? 'Power Saver Mode Active' : 'Adaptive Smart Optimization Active',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isSaver ? Colors.orange.shade900 : Colors.teal.shade800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+
+                  // Power Saver Switch Box
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isSaver ? Colors.orange.shade50 : AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSaver ? Colors.orange.shade300 : AppColors.border,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Extreme Battery Saver Mode',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                isSaver
+                                    ? 'Continuous microphone listening paused. Emergency Shake and SOS Button remain 100% armed.'
+                                    : 'Preserve battery on low-charge days by pausing continuous microphone sampling while keeping shake SOS armed.',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Switch.adaptive(
+                          value: isSaver,
+                          activeTrackColor: Colors.orange.shade800,
+                          onChanged: (val) async {
+                            await controller.toggleBatterySaver(val);
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 18),
+                  const Text(
+                    'ACTIVE POWER OPTIMIZATIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                      color: AppColors.textMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  _buildPowerOptimizationItem(
+                    icon: Icons.location_on_rounded,
+                    title: 'Smart GPS On-Demand',
+                    detail: 'Satellite hardware only streams when map is open or during active SOS. Powers down immediately in background.',
+                  ),
+                  _buildPowerOptimizationItem(
+                    icon: Icons.vibration_rounded,
+                    title: '15Hz Sensor Throttling',
+                    detail: 'Shake accelerometer throttled from 50Hz to 15Hz, eliminating 70% of CPU wakeups while catching double-shakes.',
+                  ),
+                  _buildPowerOptimizationItem(
+                    icon: Icons.wifi_rounded,
+                    title: 'Wi-Fi Power Save (802.11 DTIM)',
+                    detail: 'No persistent background Wi-Fi locks held, allowing phone radio to sleep when network is idle.',
+                  ),
+                  _buildPowerOptimizationItem(
+                    icon: Icons.mic_none_rounded,
+                    title: 'Acoustic Voice VAD (-30dB)',
+                    detail: 'Pocket and fabric rustle ignored locally. Radio data is not transmitted unless human speech level is registered.',
+                  ),
+
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      child: const Text(
+                        'Done',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPowerOptimizationItem({
+    required IconData icon,
+    required String title,
+    required String detail,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.teal.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: Colors.teal.shade700, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                Text(
+                  detail,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

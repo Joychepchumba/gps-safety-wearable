@@ -65,12 +65,13 @@ class _MfaVerifyScreenState extends State<MfaVerifyScreen> {
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
               const Icon(
                 Icons.security_outlined,
                 size: 72,
@@ -161,6 +162,7 @@ class _MfaVerifyScreenState extends State<MfaVerifyScreen> {
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 }

@@ -301,6 +301,9 @@ class SupabaseService {
 
   /// Sign In with Google via OAuth
   Future<bool> signInWithGoogle() async {
-    return await _client.auth.signInWithOAuth(OAuthProvider.google);
+    return await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? null : 'io.supabase.safelink://login-callback',
+    );
   }
 }

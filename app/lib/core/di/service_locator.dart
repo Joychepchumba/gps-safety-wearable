@@ -4,6 +4,8 @@ import '../services/location_service.dart';
 import '../services/ble_service.dart';
 import '../services/sms_service.dart';
 import '../services/notification_service.dart';
+import '../services/shake_detection_service.dart';
+import '../../features/emergency/services/voice_activation_service.dart';
 
 import '../../features/auth/controllers/auth_controller.dart';
 import '../../features/home/controllers/home_controller.dart';
@@ -23,6 +25,9 @@ Future<void> setupServiceLocator() async {
   if (!sl.isRegistered<LocationService>()) {
     sl.registerLazySingleton(() => LocationService());
   }
+  if (!sl.isRegistered<ShakeDetectionService>()) {
+    sl.registerLazySingleton(() => ShakeDetectionService());
+  }
   if (!sl.isRegistered<BleService>()) {
     sl.registerLazySingleton(() => BleService());
   }
@@ -32,8 +37,11 @@ Future<void> setupServiceLocator() async {
   if (!sl.isRegistered<NotificationService>()) {
     sl.registerLazySingleton(() => NotificationService());
   }
+  if (!sl.isRegistered<VoiceActivationService>()) {
+    sl.registerLazySingleton(() => VoiceActivationService.instance);
+  }
 
-  // Controllers (Factories or Singletons)
+  // Controllers (Singletons for shared emergency state)
   if (!sl.isRegistered<AuthController>()) {
     sl.registerLazySingleton(() => AuthController());
   }
@@ -41,7 +49,7 @@ Future<void> setupServiceLocator() async {
     sl.registerFactory(() => HomeController());
   }
   if (!sl.isRegistered<EmergencyController>()) {
-    sl.registerFactory(() => EmergencyController());
+    sl.registerLazySingleton(() => EmergencyController());
   }
   if (!sl.isRegistered<ContactsController>()) {
     sl.registerFactory(() => ContactsController());

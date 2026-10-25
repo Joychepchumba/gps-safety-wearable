@@ -1,19 +1,328 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../controllers/home_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
+import '../../emergency/controllers/emergency_controller.dart';
 
-
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final emergencyController = context.read<EmergencyController>();
+      emergencyController.startProtection();
+    });
+  }
+
+  void _showShakeSettingsModal(BuildContext context, EmergencyController emergencyController) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final isArmed = emergencyController.isShakeActive;
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: (isArmed ? AppColors.success : AppColors.error).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.vibration_rounded,
+                            color: isArmed ? AppColors.success : AppColors.error,
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Shake Detection Trigger',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                isArmed ? 'ARMED & ACTIVE IN BACKGROUND' : 'DISABLED',
+                                style: TextStyle(
+                                  color: isArmed ? AppColors.success : AppColors.error,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: isArmed,
+                          activeThumbColor: AppColors.primary,
+                          onChanged: (val) {
+                            emergencyController.toggleShakeDetection();
+                            setModalState(() {});
+                            setState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'How it works:',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Vigorously shake your phone 2 or more times to immediately start the 10-second emergency SOS countdown, alert responders, and dispatch your GPS coordinates.',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.pushNamed(context, '/emergency');
+                        emergencyController.trigger(TriggerMethod.appShake);
+                      },
+                      icon: const Icon(Icons.flash_on_rounded, color: Colors.white, size: 20),
+                      label: const Text(
+                        'Test Shake SOS Now',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.sosRed,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showVoiceSettingsModal(BuildContext context, EmergencyController emergencyController) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final isEnabled = emergencyController.isVoiceEnabled;
+            final isListening = emergencyController.isVoiceActive;
+            return SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: AppColors.border,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      children: [
+                        Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: (isEnabled ? AppColors.success : AppColors.error).withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isListening ? Icons.mic_rounded : (isEnabled ? Icons.mic_rounded : Icons.mic_off_rounded),
+                            color: isEnabled ? AppColors.success : AppColors.error,
+                            size: 26,
+                          ),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Voice Keyword SOS',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                isListening
+                                    ? 'ACTIVE LISTENING FOR HELP PHRASE'
+                                    : (isEnabled ? 'ENABLED (STANDBY)' : 'DISABLED'),
+                                style: TextStyle(
+                                  color: isEnabled ? AppColors.success : AppColors.error,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
+                          value: isEnabled,
+                          activeThumbColor: AppColors.primary,
+                          onChanged: (val) async {
+                            await emergencyController.toggleVoiceDetection();
+                            setModalState(() {});
+                            setState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: AppColors.inputBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Emergency Wake Words:',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Say any of these phrases out loud to automatically trigger SOS:\n'
+                            '• "Help" or "Help me"\n'
+                            '• "Send Help"\n'
+                            '• "Emergency"\n'
+                            '• "Tuma Msaada" or "Msaada" (Kiswahili)\n'
+                            '• "Piga Polisi" (Kiswahili)',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.pushNamed(context, '/emergency');
+                        emergencyController.trigger(TriggerMethod.voiceKeyword);
+                      },
+                      icon: const Icon(Icons.record_voice_over_rounded, color: Colors.white, size: 20),
+                      label: const Text(
+                        'Test Voice SOS Now',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.sosRed,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final homeController = context.watch<HomeController>();
     final authController = context.watch<AuthController>();
+    final emergencyController = context.watch<EmergencyController>();
     final user = homeController.user ?? authController.currentUser;
     final displayName = user?.fullName.isNotEmpty == true ? user!.fullName.split(' ').first : 'Joy';
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final sosButtonSize = min(180.0, screenWidth * 0.45);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -27,27 +336,31 @@ class HomeScreen extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Good morning,',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Good morning,',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        displayName,
-                        style: const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
+                        const SizedBox(height: 2),
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   Row(
                     children: [
@@ -77,7 +390,6 @@ class HomeScreen extends StatelessWidget {
                       GestureDetector(
                         onTap: () => Navigator.pushNamed(context, '/profile'),
                         child: Container(
-
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
@@ -163,30 +475,44 @@ class HomeScreen extends StatelessWidget {
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 6),
-                          Row(
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: const [
-                              Icon(Icons.battery_5_bar_rounded, color: AppColors.primary, size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                '78%',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.battery_5_bar_rounded, color: AppColors.primary, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    '78%',
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
-                              SizedBox(width: 14),
-                              Icon(Icons.signal_cellular_alt_rounded, color: AppColors.primary, size: 16),
-                              SizedBox(width: 4),
-                              Text(
-                                'Strong',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.signal_cellular_alt_rounded, color: AppColors.primary, size: 16),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Strong',
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -209,9 +535,9 @@ class HomeScreen extends StatelessWidget {
                                     color: AppColors.primary.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Row(
+                                  child: const Row(
                                     mainAxisSize: MainAxisSize.min,
-                                    children: const [
+                                    children: [
                                       Icon(Icons.shopping_bag_outlined, size: 12, color: AppColors.primary),
                                       SizedBox(width: 4),
                                       Text(
@@ -246,15 +572,15 @@ class HomeScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
 
               // Central Glowing SOS Button
               Center(
                 child: GestureDetector(
                   onTap: () => Navigator.pushNamed(context, '/emergency'),
                   child: Container(
-                    width: 190,
-                    height: 190,
+                    width: sosButtonSize,
+                    height: sosButtonSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const RadialGradient(
@@ -267,12 +593,12 @@ class HomeScreen extends StatelessWidget {
                         BoxShadow(
                           color: AppColors.sosRed.withValues(alpha: 0.35),
                           blurRadius: 36,
-                          spreadRadius: 8,
+                          spreadRadius: 6,
                         ),
                         BoxShadow(
                           color: AppColors.sosRed.withValues(alpha: 0.15),
-                          blurRadius: 54,
-                          spreadRadius: 18,
+                          blurRadius: 50,
+                          spreadRadius: 14,
                         ),
                       ],
                     ),
@@ -280,13 +606,13 @@ class HomeScreen extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: const [
-                          Icon(Icons.fingerprint, color: Colors.white, size: 40),
-                          SizedBox(height: 4),
+                          Icon(Icons.fingerprint, color: Colors.white, size: 36),
+                          SizedBox(height: 2),
                           Text(
                             'HOLD FOR',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 11,
+                              fontSize: 10,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 1.5,
                             ),
@@ -295,7 +621,7 @@ class HomeScreen extends StatelessWidget {
                             'SOS',
                             style: TextStyle(
                               color: Colors.white,
-                              fontSize: 32,
+                              fontSize: 28,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 1.5,
                             ),
@@ -306,7 +632,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
 
               // TRIGGER METHODS Header
               const Text(
@@ -327,31 +653,32 @@ class HomeScreen extends StatelessWidget {
                     child: _buildTriggerCard(
                       icon: Icons.wifi_tethering_rounded,
                       title: 'Tap Pendant',
+                      subtitle: 'Connected',
                       onTap: () => Navigator.pushNamed(context, '/wearable'),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: _buildTriggerCard(
                       icon: Icons.vibration_rounded,
                       title: 'Shake Phone',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Shake detection is active in background')),
-                        );
-                      },
+                      subtitle: emergencyController.isShakeActive ? 'Active' : 'Disabled',
+                      isHighlighted: emergencyController.isShakeActive,
+                      onTap: () => _showShakeSettingsModal(context, emergencyController),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: _buildTriggerCard(
-                      icon: Icons.mic_none_rounded,
-                      title: 'Say Help',
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Voice keyword "Help" detection listening')),
-                        );
-                      },
+                      icon: emergencyController.isVoiceActive
+                          ? Icons.mic_rounded
+                          : (emergencyController.isVoiceEnabled ? Icons.mic_rounded : Icons.mic_none_rounded),
+                      title: 'Voice SOS',
+                      subtitle: emergencyController.isVoiceActive
+                          ? 'Listening'
+                          : (emergencyController.isVoiceEnabled ? 'Standby' : 'Disabled'),
+                      isHighlighted: emergencyController.isVoiceActive || emergencyController.isVoiceEnabled,
+                      onTap: () => _showVoiceSettingsModal(context, emergencyController),
                     ),
                   ),
                 ],
@@ -368,31 +695,41 @@ class HomeScreen extends StatelessWidget {
                   letterSpacing: 1.3,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
 
-              // Quick Actions Row
+              // Responsive Quick Actions Row (NO OVERFLOW)
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildQuickAction(
-                    icon: Icons.navigation_outlined,
-                    label: 'Share location',
-                    onTap: () => Navigator.pushNamed(context, '/map'),
+                  Expanded(
+                    child: _buildQuickAction(
+                      icon: Icons.navigation_outlined,
+                      label: 'Share location',
+                      onTap: () => Navigator.pushNamed(context, '/map'),
+                    ),
                   ),
-                  _buildQuickAction(
-                    icon: Icons.phone_outlined,
-                    label: 'Call contact',
-                    onTap: () => Navigator.pushNamed(context, '/contacts'),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildQuickAction(
+                      icon: Icons.phone_outlined,
+                      label: 'Call contact',
+                      onTap: () => Navigator.pushNamed(context, '/contacts'),
+                    ),
                   ),
-                  _buildQuickAction(
-                    icon: Icons.history_rounded,
-                    label: 'Alert history',
-                    onTap: () => Navigator.pushNamed(context, '/alerts'),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildQuickAction(
+                      icon: Icons.history_rounded,
+                      label: 'Alert history',
+                      onTap: () => Navigator.pushNamed(context, '/alerts'),
+                    ),
                   ),
-                  _buildQuickAction(
-                    icon: Icons.settings_outlined,
-                    label: 'Settings',
-                    onTap: () => Navigator.pushNamed(context, '/mfa-setup'),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: _buildQuickAction(
+                      icon: Icons.mic_rounded,
+                      label: 'Voice SOS',
+                      onTap: () => Navigator.pushNamed(context, '/voice-settings'),
+                    ),
                   ),
                 ],
               ),
@@ -428,7 +765,6 @@ class HomeScreen extends StatelessWidget {
             if (index == 3) Navigator.pushNamed(context, '/contacts');
             if (index == 4) Navigator.pushNamed(context, '/profile');
           },
-
         ),
       ),
     );
@@ -437,17 +773,22 @@ class HomeScreen extends StatelessWidget {
   Widget _buildTriggerCard({
     required IconData icon,
     required String title,
+    String? subtitle,
+    bool isHighlighted = false,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(
+            color: isHighlighted ? AppColors.success.withValues(alpha: 0.6) : AppColors.border,
+            width: isHighlighted ? 1.5 : 1,
+          ),
           boxShadow: const [
             BoxShadow(
               color: AppColors.cardShadow,
@@ -458,17 +799,32 @@ class HomeScreen extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primary, size: 26),
-            const SizedBox(height: 8),
+            Icon(icon, color: isHighlighted ? AppColors.success : AppColors.primary, size: 24),
+            const SizedBox(height: 6),
             Text(
               title,
               textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: AppColors.textPrimary,
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
             ),
+            if (subtitle != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isHighlighted ? AppColors.success : AppColors.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -483,18 +839,28 @@ class HomeScreen extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+        ),
         child: Column(
           children: [
-            Icon(icon, color: AppColors.primary, size: 24),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+            Icon(icon, color: AppColors.primary, size: 22),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -503,4 +869,3 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
-

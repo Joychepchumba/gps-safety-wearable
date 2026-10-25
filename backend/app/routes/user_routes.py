@@ -272,7 +272,7 @@ def add_user_contact(req: EmergencyContactCreateRequest, supabase: Client = Depe
         "contact_name": req.contact_name.strip(),
         "phone_number": req.phone_number.strip(),
         "email": req.email.strip() if req.email and req.email.strip() else None,
-        "consent_status": "pending",
+        "consent_status": "accepted",
         "created_at": datetime.datetime.utcnow().isoformat(),
         "updated_at": datetime.datetime.utcnow().isoformat(),
     }

@@ -29,7 +29,7 @@ def start_ngrok(port: int = 8000) -> str | None:
     if url:
         return url
 
-    logger.info("ngrok not running on port 4040. Attempting to start ngrok...")
+    logger.info(f"Starting ngrok on port {port}...")
 
     # Look for ngrok in standard npm location or system PATH
     npm_ngrok = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules" / "ngrok" / "bin" / "ngrok.exe"
@@ -44,9 +44,14 @@ def start_ngrok(port: int = 8000) -> str | None:
         return None
 
     try:
+        domain_arg = os.getenv("NGROK_DOMAIN", "")
+        cmd_args = [ngrok_cmd, "http", str(port)]
+        if domain_arg and "unpaved-coherent-encroach" not in domain_arg:
+            cmd_args.append(f"--url={domain_arg}")
+
         # Launch ngrok in background
         subprocess.Popen(
-            [ngrok_cmd, "http", str(port)],
+            cmd_args,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL
@@ -115,6 +120,10 @@ def run_auto_sync(port: int = 8000) -> str | None:
     ngrok_url = get_ngrok_url()
     if not ngrok_url:
         ngrok_url = start_ngrok(port)
+
+    # Permanent user-configured ngrok tunnel fallback
+    if not ngrok_url:
+        ngrok_url = os.getenv("BACKEND_URL") or os.getenv("NGROK_URL") or "https://unpaved-coherent-encroach.ngrok-free.dev"
 
     if ngrok_url:
         sync_launch_json(ngrok_url)
