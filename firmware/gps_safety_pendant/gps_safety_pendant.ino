@@ -52,11 +52,7 @@
 #include <Preferences.h>
 #include <TinyGsmClient.h>
 
-#if __has_include(<TinyGPSPlus.h>)
 #include <TinyGPSPlus.h>
-#else
-#include <TinyGPS++.h>
-#endif
 
 #include <BLEDevice.h>
 #include <BLEServer.h>
