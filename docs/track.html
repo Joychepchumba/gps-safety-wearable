@@ -325,8 +325,8 @@
     const params = new URLSearchParams(window.location.search);
     const hasIncidentCoords = params.has('lat') && params.has('lng');
     const incidentId = params.get('id') || params.get('session');
-    let curLat = parseFloat(params.get('lat') || '-1.307300'); // Strathmore University default
-    let curLng = parseFloat(params.get('lng') || '36.811800');
+    let curLat = parseFloat(params.get('lat') || '-1.309250'); // Strathmore University main campus
+    let curLng = parseFloat(params.get('lng') || '36.812720');
     const rawName = params.get('name');
     const displayName = rawName || (incidentId ? `Incident #${incidentId}` : 'SafeGuard User');
     const mapboxToken = 'pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA';
@@ -352,7 +352,7 @@
       document.getElementById('last-updated').innerText = 'STANDBY';
       document.getElementById('dist-pill').innerHTML = '🔒 No active coordinates. Tap a link from your emergency SMS.';
       document.getElementById('nav-btn').innerHTML = '🧪 Demo Incident (Strathmore Univ)';
-      document.getElementById('nav-btn').href = '?lat=-1.307300&lng=36.811800&id=DEMO-SOS-001';
+      document.getElementById('nav-btn').href = '?lat=-1.309250&lng=36.812720&id=DEMO-SOS-001';
       document.getElementById('nav-btn').target = '_self';
     }
 

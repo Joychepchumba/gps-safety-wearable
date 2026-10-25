@@ -134,11 +134,11 @@ const unsigned long DEBOUNCE_MS      = 40UL;     // touch debounce
 const unsigned long COOLDOWN_MS      = 25000UL;  // minimum time between triggered alerts
 const unsigned long HEARTBEAT_INT_MS = 60000UL;  // periodic DB heartbeat interval (60s)
 
-// Location state in RAM & Flash (Strathmore University default)
-String lastLat = "-1.307300";   // Strathmore University, Nairobi
-String lastLon = "36.811800";
+// Location state in RAM & Flash (Strathmore University Main Campus)
+String lastLat = "-1.309250";   // Strathmore University, Ole Sangale Rd, Nairobi
+String lastLon = "36.812720";
 String lastCity = "Strathmore University";
-String currentLocSource = "Strathmore Univ Anchor";
+String currentLocSource = "Strathmore Campus Anchor";
 unsigned long lastFixMs = 0;
 unsigned long lastBleLocMs = 0;
 unsigned long lastHeartbeatMs = 0;
@@ -192,13 +192,13 @@ void loadSettingsFromFlash() {
 
   deviceUUID = prefs.getString("dev_uuid", "");
 
-  // Load saved indoor anchor coordinates (Migrate old default to Strathmore)
-  lastLat = prefs.getString("last_lat", "-1.307300");
-  lastLon = prefs.getString("last_lon", "36.811800");
-  if (lastLat == "-1.292100" || lastLat.length() == 0) {
-    lastLat = "-1.307300";
-    lastLon = "36.811800";
-    currentLocSource = "Strathmore Univ Anchor";
+  // Load saved indoor anchor coordinates (Migrate old default to Strathmore Campus)
+  lastLat = prefs.getString("last_lat", "-1.309250");
+  lastLon = prefs.getString("last_lon", "36.812720");
+  if (lastLat == "-1.292100" || lastLat == "-1.307300" || lastLat.length() == 0) {
+    lastLat = "-1.309250";
+    lastLon = "36.812720";
+    currentLocSource = "Strathmore Campus Anchor";
     prefs.putString("last_lat", lastLat);
     prefs.putString("last_lon", lastLon);
   }
@@ -440,10 +440,10 @@ bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
     return true;
   }
 
-  // Final fallback (Strathmore University campus)
-  lat = "-1.307300";
-  lon = "36.811800";
-  currentLocSource = "Strathmore Univ Anchor";
+  // Final fallback (Strathmore University main campus)
+  lat = "-1.309250";
+  lon = "36.812720";
+  currentLocSource = "Strathmore Campus Anchor";
   return true;
 }
 
