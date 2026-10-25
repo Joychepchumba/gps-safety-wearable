@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/avatar_presets.dart';
 import '../../../core/utils/validators.dart';
 import '../controllers/auth_controller.dart';
 
@@ -23,6 +24,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isPasswordVisible = false;
   bool _isConfirmVisible = false;
   bool _isCommunityResponder = false;
+  String _selectedAvatarId = 'guardian';
 
   @override
   void dispose() {
@@ -43,6 +45,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
         isCommunityResponder: _isCommunityResponder,
+        avatarUrl: _selectedAvatarId,
         emergencyPassword: _emergencyPasswordController.text.trim().isNotEmpty
             ? _emergencyPasswordController.text.trim()
             : null,
@@ -94,44 +97,86 @@ class _RegisterScreenState extends State<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Top Avatar with Add photo
+                // Top Avatar Selection Section
                 Center(
                   child: Column(
                     children: [
-                      Container(
-                        width: 76,
-                        height: 76,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.3), width: 1.5),
-                        ),
-                        child: const Icon(
-                          Icons.person,
-                          size: 40,
-                          color: AppColors.primary,
+                      AvatarPresets.renderWidget(
+                        avatarId: _selectedAvatarId,
+                        size: 80,
+                        border: Border.all(color: Colors.white, width: 3),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        AvatarPresets.getById(_selectedAvatarId).name,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.arrow_upward, size: 13, color: AppColors.primary),
-                          SizedBox(width: 4),
-                          Text(
-                            'Add photo',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Choose your safety avatar',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Horizontal Avatar Selector Chips
+                      SizedBox(
+                        height: 52,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          shrinkWrap: true,
+                          itemCount: AvatarPresets.all.length,
+                          separatorBuilder: (_, _) => const SizedBox(width: 10),
+                          itemBuilder: (context, index) {
+                            final preset = AvatarPresets.all[index];
+                            final isSelected = preset.id == _selectedAvatarId;
+                            return GestureDetector(
+                              onTap: () => setState(() => _selectedAvatarId = preset.id),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: LinearGradient(
+                                    colors: preset.gradient,
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  border: Border.all(
+                                    color: isSelected ? AppColors.primary : Colors.transparent,
+                                    width: isSelected ? 3 : 1,
+                                  ),
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                            color: preset.gradient.first.withValues(alpha: 0.4),
+                                            blurRadius: 8,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ]
+                                      : null,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    preset.emoji,
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 22),
 
                 // Full Name
                 const Text(

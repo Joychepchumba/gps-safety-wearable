@@ -196,6 +196,42 @@ class AlertController extends ChangeNotifier {
     }
   }
 
+  Future<bool> resolveAlert(String alertId, {String? notes}) async {
+    try {
+      final now = DateTime.now();
+      // 1. Update in Supabase
+      try {
+        await _supabaseService.client
+            .from('panic_events')
+            .update({
+              'status': 'resolved',
+              'resolved_at': now.toIso8601String(),
+              'notes': ?notes,
+            })
+            .eq('id', alertId);
+      } catch (e) {
+        debugPrint('[ALERTS] Resolve in Supabase error: $e');
+      }
+
+      // 2. Update local state
+      final idx = alerts.indexWhere((a) => a.id == alertId);
+      if (idx != -1) {
+        final old = alerts[idx];
+        alerts[idx] = old.copyWith(
+          status: 'resolved',
+          resolvedAt: now,
+          notes: notes ?? old.notes,
+        );
+        await _cacheAlerts(alerts);
+        notifyListeners();
+      }
+      return true;
+    } catch (e) {
+      debugPrint('[ALERTS] resolveAlert error: $e');
+      return false;
+    }
+  }
+
   Future<void> refreshAlerts() async {
     await loadAlerts();
   }

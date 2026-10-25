@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_constants.dart';
 import '../controllers/alert_controller.dart';
 import '../../../models/panic_event_model.dart';
 
@@ -16,14 +14,34 @@ class AlertHistoryScreen extends StatefulWidget {
 }
 
 class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
-  String _selectedFilter = 'all'; // 'all', 'active', 'resolved', 'false_alarm'
+  String _selectedFilter = 'all'; // 'all', 'active', 'resolved', 'analytics'
+
+  void _open3DMap(double lat, double lon, String? id) async {
+    final incidentRef = id ?? 'SOS-${DateTime.now().millisecondsSinceEpoch.toRadixString(16).toUpperCase()}';
+    final url = 'https://joychepchumba.github.io/gps-safety-wearable/track.html?lat=$lat&lng=$lon&id=$incidentRef';
+    final uri = Uri.parse(url);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
+
+  void _openGoogleMaps(double lat, double lon) async {
+    final uri = Uri.parse('https://maps.google.com/?q=$lat,$lon');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<AlertController>();
 
     final filteredAlerts = controller.alerts.where((a) {
-      if (_selectedFilter == 'all') return true;
+      if (_selectedFilter == 'all' || _selectedFilter == 'analytics') return true;
       return a.status.toLowerCase() == _selectedFilter;
     }).toList();
 
@@ -33,7 +51,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         title: const Text(
-          'Alert History & Telemetry',
+          'Incident History & Telemetry',
           style: TextStyle(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.w800,
@@ -46,7 +64,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Refresh History',
+            tooltip: 'Refresh Incidents',
             icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
             onPressed: () => controller.refreshAlerts(),
           ),
@@ -59,68 +77,68 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               color: AppColors.primary,
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // --- 1. TOP ANALYTICS DASHBOARD (RESPONSIVE & OVERFLOW-SAFE) ---
+                    // --- 1. EXECUTIVE ANALYTICS DASHBOARD ---
                     _buildAnalyticsDashboard(controller),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
-                    // --- 2. FILTER TABS ---
+                    // --- 2. FILTER PILLS ---
                     _buildFilterTabs(controller),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
 
-                    // --- 3. ALERTS LIST ---
-                    if (filteredAlerts.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 56,
-                              height: 56,
-                              decoration: const BoxDecoration(
-                                color: AppColors.surface,
-                                shape: BoxShape.circle,
+                    // If Analytics tab is selected, show deep analytics view
+                    if (_selectedFilter == 'analytics')
+                      _buildDeepAnalyticsSection(controller)
+                    else ...[
+                      // --- 3. INCIDENTS LIST ---
+                      if (filteredAlerts.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: AppColors.border),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.surface,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.shield_outlined, size: 30, color: AppColors.textSecondary),
                               ),
-                              child: const Icon(Icons.shield_outlined, size: 30, color: AppColors.textSecondary),
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _selectedFilter == 'all'
-                                  ? 'No alerts recorded yet'
-                                  : 'No $_selectedFilter alerts found',
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
+                              const SizedBox(height: 14),
+                              Text(
+                                _selectedFilter == 'all' ? 'No incidents recorded yet' : 'No $_selectedFilter incidents found',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'When an SOS is triggered, complete location telemetry & resolution logs will appear here.',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              const Text(
+                                'Emergency dispatches from your wearable or mobile app will appear here with live telemetry.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: filteredAlerts.length,
+                          itemBuilder: (context, index) {
+                            return _buildIncidentCard(filteredAlerts[index], controller);
+                          },
                         ),
-                      )
-                    else
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: filteredAlerts.length,
-                        itemBuilder: (context, index) {
-                          return _buildAlertCard(filteredAlerts[index]);
-                        },
-                      ),
+                    ],
+                    const SizedBox(height: 40),
                   ],
                 ),
               ),
@@ -128,18 +146,18 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     );
   }
 
-  // --- ANALYTICS DASHBOARD ---
+  // --- EXECUTIVE ANALYTICS DASHBOARD ---
   Widget _buildAnalyticsDashboard(AlertController controller) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(color: AppColors.border),
@@ -152,10 +170,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.analytics_rounded, color: AppColors.primary, size: 18),
-                  SizedBox(width: 6),
+                  Icon(Icons.analytics_rounded, color: AppColors.primary, size: 20),
+                  SizedBox(width: 8),
                   Text(
-                    'Incident Overview',
+                    'Safety Analytics Overview',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
@@ -165,7 +183,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                 ],
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.success.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
@@ -184,14 +202,14 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
 
-          // Responsive 3-Metric Tiles
+          // 3-Metric Tiles
           Row(
             children: [
               Expanded(
                 child: _buildMetricTile(
-                  label: 'Total Incidents',
+                  label: 'Total Alerts',
                   value: controller.totalAlerts.toString(),
                   icon: Icons.notifications_active_rounded,
                   color: AppColors.primary,
@@ -200,10 +218,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: _buildMetricTile(
-                  label: 'Resolved',
-                  value: controller.resolvedCount.toString(),
-                  icon: Icons.verified_user_rounded,
-                  color: AppColors.success,
+                  label: 'Active',
+                  value: controller.activeCount.toString(),
+                  icon: Icons.emergency_rounded,
+                  color: controller.activeCount > 0 ? AppColors.sosRed : AppColors.textMuted,
                 ),
               ),
               const SizedBox(width: 8),
@@ -215,26 +233,6 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                   color: const Color(0xFF0F766E),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(height: 1, color: AppColors.border),
-          const SizedBox(height: 10),
-
-          // Trigger Source Breakdown Chips (Wrap instead of overflow row)
-          const Text(
-            'Trigger Sources:',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              _buildSourceBadge('🎙️ Voice', controller.voiceTriggerCount, const Color(0xFF8B5CF6)),
-              _buildSourceBadge('📳 Shake', controller.shakeTriggerCount, const Color(0xFFF59E0B)),
-              _buildSourceBadge('🔘 Pendant', controller.pendantTriggerCount, const Color(0xFF06B6D4)),
-              _buildSourceBadge('🔴 App Button', controller.buttonTriggerCount, AppColors.sosRed),
             ],
           ),
         ],
@@ -249,67 +247,39 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 18),
+          Row(
+            children: [
+              Icon(icon, size: 14, color: color),
+              const Spacer(),
+            ],
+          ),
           const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                color: color,
-              ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: color,
             ),
           ),
           const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 10, color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textSecondary,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSourceBadge(String title, int count, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(title, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
-          const SizedBox(width: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              '$count',
-              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),
@@ -318,373 +288,417 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
 
   // --- FILTER TABS ---
   Widget _buildFilterTabs(AlertController controller) {
-    final filters = [
-      {'key': 'all', 'label': 'All (${controller.totalAlerts})'},
-      {'key': 'active', 'label': 'Active (${controller.activeCount})'},
-      {'key': 'resolved', 'label': 'Resolved (${controller.resolvedCount})'},
-      {'key': 'false_alarm', 'label': 'False Alarm (${controller.falseAlarmCount})'},
-    ];
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
-        children: filters.map((f) {
-          final isSelected = _selectedFilter == f['key'];
-          return Padding(
-            padding: const EdgeInsets.only(right: 6.0),
-            child: InkWell(
-              onTap: () => setState(() => _selectedFilter = f['key'] as String),
-              borderRadius: BorderRadius.circular(10),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isSelected ? AppColors.primary : Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: isSelected ? AppColors.primary : AppColors.border,
-                  ),
-                ),
-                child: Text(
-                  f['label'] as String,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : AppColors.textPrimary,
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          );
-        }).toList(),
+        children: [
+          _buildFilterChip('all', 'All (${controller.totalAlerts})'),
+          const SizedBox(width: 8),
+          _buildFilterChip('active', 'Active (${controller.activeCount})', isRed: true),
+          const SizedBox(width: 8),
+          _buildFilterChip('resolved', 'Resolved (${controller.resolvedCount})'),
+          const SizedBox(width: 8),
+          _buildFilterChip('analytics', 'Deep Analytics', icon: Icons.insights_rounded),
+        ],
       ),
     );
   }
 
-  // --- ALERT CARD (COMPLETELY RESIZED & OVERFLOW-SAFE) ---
-  Widget _buildAlertCard(PanicEventModel alert) {
-    final triggerConfig = _getTriggerConfig(alert.triggerMethod);
+  Widget _buildFilterChip(String value, String label, {bool isRed = false, IconData? icon}) {
+    final isSelected = _selectedFilter == value;
+    final activeColor = isRed ? AppColors.sosRed : AppColors.primary;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+    return InkWell(
+      onTap: () => setState(() => _selectedFilter = value),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? activeColor : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeColor : AppColors.border,
+            width: isSelected ? 1.5 : 1,
           ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Top Row: Trigger Method + Status Badge
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
-                          color: triggerConfig.color.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(triggerConfig.icon, color: triggerConfig.color, size: 16),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              triggerConfig.title,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: triggerConfig.color,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            Text(
-                              DateFormat('MMM dd, yyyy • HH:mm').format(alert.triggeredAt),
-                              style: const TextStyle(color: AppColors.textSecondary, fontSize: 10),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                _buildStatusBadge(alert.status),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // Location Box
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 1.0),
-                        child: Icon(Icons.location_on_rounded, color: AppColors.accent, size: 15),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(
-                          alert.isLocationAnonymised
-                              ? 'Location Anonymised (Kenya DPA 2024 compliance)'
-                              : 'Lat ${alert.latitude.toStringAsFixed(5)}, Lng ${alert.longitude.toStringAsFixed(5)} (±${alert.locationAccuracyM.toStringAsFixed(0)}m accuracy)',
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 11,
-                          ),
-                          softWrap: true,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 3D Mapbox Live Tracking Replay Actions (Single 3D Mapbox Live Link)
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: ElevatedButton.icon(
-                          onPressed: () async {
-                            final uri = Uri.parse(AppConstants.buildLiveTrackingUrl(
-                              lat: alert.latitude,
-                              lng: alert.longitude,
-                              alertId: alert.id,
-                            ));
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
-                          },
-                          icon: const Icon(Icons.travel_explore_rounded, size: 14, color: Colors.white),
-                          label: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('⚡ 3D Live Mapbox', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E3A8A),
-                            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 10),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        flex: 2,
-                        child: OutlinedButton.icon(
-                          onPressed: () async {
-                            final trackUrl = AppConstants.buildLiveTrackingUrl(
-                              lat: alert.latitude,
-                              lng: alert.longitude,
-                              alertId: alert.id,
-                            );
-                            await Clipboard.setData(ClipboardData(text: trackUrl));
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('3D Mapbox tracking link copied to clipboard!'),
-                                duration: Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          },
-                          icon: const Icon(Icons.copy_rounded, size: 13, color: AppColors.primary),
-                          label: const FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text('Copy Link', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.primary)),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: AppColors.primary),
-                            padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 8),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Dispatches / Broadcasts Summary Tags (Using Wrap so it NEVER overflows horizontally)
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                _buildDispatchTag(
-                  icon: Icons.group_rounded,
-                  label: 'Contacts',
-                  isDispatched: alert.emergencyContactsNotified,
-                ),
-                _buildDispatchTag(
-                  icon: Icons.shield_rounded,
-                  label: 'Responders',
-                  isDispatched: alert.communityRespondersAlerted,
-                ),
-                _buildDispatchTag(
-                  icon: Icons.local_police_rounded,
-                  label: 'Police 999',
-                  isDispatched: alert.hotlineNotified,
-                ),
-              ],
-            ),
-
-            if (alert.notes != null && alert.notes!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Note: ${alert.notes}',
-                style: const TextStyle(fontSize: 10, fontStyle: FontStyle.italic, color: AppColors.textSecondary),
-              ),
+            if (icon != null) ...[
+              Icon(icon, size: 14, color: isSelected ? Colors.white : AppColors.textPrimary),
+              const SizedBox(width: 4),
             ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDispatchTag({
-    required IconData icon,
-    required String label,
-    required bool isDispatched,
-  }) {
-    final color = isDispatched ? AppColors.success : AppColors.textSecondary;
+  // --- DEEP ANALYTICS SECTION ---
+  Widget _buildDeepAnalyticsSection(AlertController controller) {
+    int wearableCount = 0;
+    int voiceCount = 0;
+    int shakeCount = 0;
+    int buttonCount = 0;
+
+    for (final a in controller.alerts) {
+      final m = a.triggerMethod.toLowerCase();
+      if (m.contains('pendant') || m.contains('touch') || m.contains('wearable')) {
+        wearableCount++;
+      } else if (m.contains('voice')) {
+        voiceCount++;
+      } else if (m.contains('shake')) {
+        shakeCount++;
+      } else {
+        buttonCount++;
+      }
+    }
+
+    final total = controller.totalAlerts == 0 ? 1 : controller.totalAlerts;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Trigger Method Distribution
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.pie_chart_rounded, color: AppColors.primary, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Trigger Source Breakdown',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              _buildProgressRow('Wearable Touch Button', wearableCount, total, const Color(0xFF0066FF)),
+              const SizedBox(height: 12),
+              _buildProgressRow('Voice SOS Keyword', voiceCount, total, const Color(0xFF8B5CF6)),
+              const SizedBox(height: 12),
+              _buildProgressRow('Mobile Shake Trigger', shakeCount, total, const Color(0xFFF59E0B)),
+              const SizedBox(height: 12),
+              _buildProgressRow('Mobile App Button', buttonCount, total, const Color(0xFFFF334B)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Safety Reliability Insights
+        Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.border),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
+                  SizedBox(width: 8),
+                  Text(
+                    'Safety Telemetry Reliability',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              _buildInsightItem(
+                icon: Icons.satellite_alt_rounded,
+                title: 'GPS Satellite Precision',
+                desc: 'Outdoor alerts achieve 5m satellite accuracy via NEO-6M receiver.',
+              ),
+              const SizedBox(height: 10),
+              _buildInsightItem(
+                icon: Icons.sms_rounded,
+                title: 'Cellular SMS Offline Guarantee',
+                desc: 'SIM800L dispatches emergency links directly without depending on Wi-Fi.',
+              ),
+              const SizedBox(height: 10),
+              _buildInsightItem(
+                icon: Icons.map_rounded,
+                title: '3D Mapbox Volumetric Telemetry',
+                desc: 'Extruded buildings and terrain give guardians immediate spatial awareness.',
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildProgressRow(String label, int count, int total, Color color) {
+    final pct = (count / total).clamp(0.0, 1.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text('$count (${(pct * 100).toStringAsFixed(0)}%)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: pct,
+            backgroundColor: color.withValues(alpha: 0.12),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            minHeight: 8,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInsightItem({required IconData icon, required String title, required String desc}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, size: 18, color: AppColors.primary),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              const SizedBox(height: 2),
+              Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // --- INCIDENT CARD ---
+  Widget _buildIncidentCard(PanicEventModel alert, AlertController controller) {
+    final isActive = alert.status.toLowerCase() == 'active';
+    final lat = alert.latitude;
+    final lon = alert.longitude;
+    final dateStr = DateFormat('MMM d, yyyy • h:mm a').format(alert.triggeredAt.toLocal());
+
+    // Determine trigger info
+    String triggerTitle = 'Emergency Button';
+    IconData triggerIcon = Icons.touch_app_rounded;
+    Color triggerColor = AppColors.sosRed;
+
+    final tm = alert.triggerMethod.toLowerCase();
+    if (tm.contains('pendant') || tm.contains('touch') || tm.contains('wearable')) {
+      triggerTitle = 'Wearable Touch Sensor';
+      triggerIcon = Icons.watch_rounded;
+      triggerColor = const Color(0xFF0066FF);
+    } else if (tm.contains('voice')) {
+      triggerTitle = 'Voice SOS Keyword';
+      triggerIcon = Icons.mic_rounded;
+      triggerColor = const Color(0xFF8B5CF6);
+    } else if (tm.contains('shake')) {
+      triggerTitle = 'Mobile Shake Trigger';
+      triggerIcon = Icons.vibration_rounded;
+      triggerColor = const Color(0xFFF59E0B);
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isActive ? AppColors.sosRed.withValues(alpha: 0.5) : AppColors.border,
+          width: isActive ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isActive ? AppColors.sosRed.withValues(alpha: 0.08) : Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 11, color: color),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              color: color,
+          // Header Row
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: triggerColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(triggerIcon, color: triggerColor, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        triggerTitle,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(dateStr, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                    ],
+                  ),
+                ),
+                // Status Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isActive ? AppColors.sosRed.withValues(alpha: 0.12) : AppColors.success.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isActive ? Icons.emergency_rounded : Icons.check_circle_rounded,
+                        color: isActive ? AppColors.sosRed : AppColors.success,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isActive ? 'ACTIVE' : 'RESOLVED',
+                        style: TextStyle(
+                          color: isActive ? AppColors.sosRed : AppColors.success,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 3),
-          Icon(
-            isDispatched ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-            size: 9,
-            color: color,
+
+          const Divider(color: AppColors.border, height: 1),
+
+          // Body with Location & Notes
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Location Row
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.location_on_rounded, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Coordinates: ${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+                if (alert.notes != null && alert.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      alert.notes!,
+                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+
+                // Action Buttons (3D Mapbox, Google Maps, Resolve)
+                Row(
+                  children: [
+                    // 3D Mapbox Button
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () => _open3DMap(lat, lon, alert.id),
+                        icon: const Icon(Icons.view_in_ar_rounded, size: 16, color: Colors.white),
+                        label: const Text('Live 3D Map', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+
+                    // Google Maps Button
+                    OutlinedButton(
+                      onPressed: () => _openGoogleMaps(lat, lon),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        side: const BorderSide(color: AppColors.border),
+                      ),
+                      child: const Icon(Icons.map_rounded, size: 16, color: AppColors.textPrimary),
+                    ),
+
+                    if (isActive) ...[
+                      const SizedBox(width: 8),
+                      // Resolve Button
+                      OutlinedButton(
+                        onPressed: () async {
+                          await controller.resolveAlert(alert.id);
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Incident marked as resolved.'), backgroundColor: AppColors.success),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          side: const BorderSide(color: AppColors.success),
+                        ),
+                        child: const Text('Resolve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.success)),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
-
-  Widget _buildStatusBadge(String status) {
-    Color color;
-    String label;
-    switch (status.toLowerCase()) {
-      case 'active':
-        color = AppColors.sosRed;
-        label = 'ACTIVE';
-        break;
-      case 'resolved':
-        color = AppColors.success;
-        label = 'RESOLVED';
-        break;
-      case 'false_alarm':
-      default:
-        color = AppColors.textSecondary;
-        label = 'FALSE ALARM';
-        break;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w800),
-      ),
-    );
-  }
-
-  _TriggerConfig _getTriggerConfig(String method) {
-    switch (method.toLowerCase()) {
-      case 'voice_keyword':
-        return _TriggerConfig(
-          title: 'Voice Activation',
-          icon: Icons.mic_rounded,
-          color: const Color(0xFF8B5CF6),
-        );
-      case 'app_shake':
-        return _TriggerConfig(
-          title: 'Shake Sensor',
-          icon: Icons.vibration_rounded,
-          color: const Color(0xFFF59E0B),
-        );
-      case 'pendant_touch':
-      case 'wearable':
-        return _TriggerConfig(
-          title: 'ESP32 Pendant SOS',
-          icon: Icons.watch_rounded,
-          color: const Color(0xFF06B6D4),
-        );
-      case 'app_button':
-      case 'app':
-      default:
-        return _TriggerConfig(
-          title: 'In-App SOS Button',
-          icon: Icons.touch_app_rounded,
-          color: AppColors.sosRed,
-        );
-    }
-  }
-}
-
-class _TriggerConfig {
-  final String title;
-  final IconData icon;
-  final Color color;
-
-  _TriggerConfig({
-    required this.title,
-    required this.icon,
-    required this.color,
-  });
 }

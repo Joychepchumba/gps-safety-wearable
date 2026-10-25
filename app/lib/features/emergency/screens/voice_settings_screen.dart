@@ -62,7 +62,17 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       _testResultMatched = null;
     });
 
-    final res = await _voiceService.recordAndTestPhrase(phraseToTest, duration: const Duration(seconds: 4));
+    final res = await _voiceService.recordAndTestPhrase(
+      phraseToTest,
+      duration: const Duration(seconds: 6),
+      onPartialHeard: (partial) {
+        if (mounted) {
+          setState(() {
+            _testResultText = 'Hearing: "$partial"...';
+          });
+        }
+      },
+    );
 
     if (!mounted) return;
     setState(() {
@@ -72,7 +82,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
         final matched = res['matched'] as bool;
         _testResultText = transcription.isNotEmpty
             ? 'Model Heard: "$transcription"'
-            : 'Model did not hear clear speech. Try speaking louder.';
+            : 'Model did not catch clear speech. Speak clearly into mic.';
         _testResultMatched = matched;
       } else {
         _testResultText = res['error'] ?? 'Audio verification failed';
@@ -284,6 +294,30 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isTesting ? AppColors.sosRed : AppColors.primary,
                       padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Simulation Button for Instant Verification
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      _voiceService.simulateVoiceDetected();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Simulated Voice SOS alert triggered!'),
+                          backgroundColor: AppColors.primary,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.flash_on_rounded, size: 18, color: AppColors.primary),
+                    label: const Text(
+                      'Test Full Emergency Flow (Simulate Trigger)',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                   ),

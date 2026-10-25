@@ -385,33 +385,90 @@ class VoiceActivationService {
     return false;
   }
 
+  // Phonetic aliases & sound-alikes for Kiswahili & English emergency triggers
+  // Crucial when Google STT on Android is in English mode but user speaks Kiswahili
+  static const Map<String, List<String>> _phoneticAliases = {
+    'tuma': ['tuma', 'to my', 'two my', 'to ma', 'tumor', 'touma', 'thuma', '2 my', 'to me', 'thomas', 'tumaa'],
+    'msaada': ['msaada', 'masada', 'msada', 'sada', 'musaada', 'mussada', 'musada', 'masaha', 'massada', 'mother', 'my sada', 'asada', 'saad', 'sahada'],
+    'nisaidie': ['nisaidie', 'saidie', 'knee side', 'ni saidie', 'saidia', 'nisadie', 'side ya', 'inside', 'knee side yeah', 'said here', 'knee said'],
+    'piga': ['piga', 'peter', 'picker', 'bigger', 'peega', 'pika', 'beater', 'pig'],
+    'polisi': ['polisi', 'police', 'policeman', 'polici', 'polize', 'please', 'polisi'],
+    'okoa': ['okoa', 'okwa', 'okowa', 'oak', 'aqua', 'accord'],
+    'maisha': ['maisha', 'my share', 'maysha', 'may sha', 'mysha', 'misha'],
+    'help': ['help', 'help me', 'hell', 'held'],
+    'emergency': ['emergency', 'emergent'],
+    'save': ['save', 'safe'],
+  };
+
   bool _matchesSinglePhrase(String heard, String target) {
+    final cleanHeard = heard
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^\w\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
     final cleanTarget = target
         .trim()
         .toLowerCase()
         .replaceAll(RegExp(r'[^\w\s]'), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    if (cleanTarget.isEmpty) return false;
+    if (cleanTarget.isEmpty || cleanHeard.isEmpty) return false;
 
-    // Direct substring or exact match
-    if (heard.contains(cleanTarget)) return true;
+    // 1. Direct substring match
+    if (cleanHeard.contains(cleanTarget)) return true;
 
-    // Word-by-word match (e.g. "please help me right now" matches "help me")
-    final words = cleanTarget.split(' ').where((w) => w.isNotEmpty).toList();
-    if (words.isEmpty) return false;
+    // 2. Target keywords analysis with phonetic aliases
+    final targetWords = cleanTarget.split(' ').where((w) => w.isNotEmpty).toList();
+    if (targetWords.isEmpty) return false;
 
-    int matchedCount = 0;
-    for (final w in words) {
-      if (heard.contains(w)) matchedCount++;
+    int matchedKeywords = 0;
+    for (final word in targetWords) {
+      if (cleanHeard.contains(word)) {
+        matchedKeywords++;
+        continue;
+      }
+      // Check phonetic sound-alikes (crucial for Kiswahili spoken on English STT engine)
+      final aliases = _phoneticAliases[word];
+      if (aliases != null) {
+        bool aliasFound = false;
+        for (final alias in aliases) {
+          if (cleanHeard.contains(alias)) {
+            aliasFound = true;
+            break;
+          }
+        }
+        if (aliasFound) {
+          matchedKeywords++;
+          continue;
+        }
+      }
     }
-    return matchedCount >= words.length;
+
+    // If all words in the target phrase matched
+    if (matchedKeywords >= targetWords.length) return true;
+
+    // For 2-word phrases like "tuma msaada", matching "msaada" or "tuma" plus emergency context is valid
+    if (targetWords.length >= 2 && matchedKeywords >= 1) {
+      if (cleanHeard.contains('msaada') ||
+          cleanHeard.contains('masada') ||
+          cleanHeard.contains('sada') ||
+          cleanHeard.contains('help') ||
+          cleanHeard.contains('saidie') ||
+          cleanHeard.contains('police') ||
+          cleanHeard.contains('polisi')) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
-  /// Interactive Voice Testing (Works both with on-device speech recognizer and backend Whisper)
+  /// Interactive Voice Testing (Works with on-device speech recognizer and phonetic dictionary)
   Future<Map<String, dynamic>> recordAndTestPhrase(
     String candidatePhrase, {
-    Duration duration = const Duration(seconds: 4),
+    Duration duration = const Duration(seconds: 6),
+    Function(String partialText)? onPartialHeard,
   }) async {
     try {
       if (!await _ensureMicPermission()) {
@@ -429,9 +486,23 @@ class VoiceActivationService {
         final completer = Completer<Map<String, dynamic>>();
         String capturedWords = '';
 
+        // Detect if Kiswahili locale (sw_KE) is supported on device
+        String? swLocale;
+        try {
+          final locales = await testSpeech.locales();
+          for (final loc in locales) {
+            if (loc.localeId.toLowerCase().startsWith('sw')) {
+              swLocale = loc.localeId;
+              break;
+            }
+          }
+        } catch (_) {}
+
         await testSpeech.listen(
+          localeId: swLocale,
           onResult: (result) {
             capturedWords = result.recognizedWords;
+            onPartialHeard?.call(capturedWords);
             final isMatched = _matchesSinglePhrase(capturedWords, candidatePhrase) ||
                 _matchesWakePhrase(capturedWords);
             if (isMatched && !completer.isCompleted) {
@@ -444,13 +515,16 @@ class VoiceActivationService {
             }
           },
           listenOptions: stt.SpeechListenOptions(
+            listenMode: stt.ListenMode.dictation,
+            partialResults: true,
+            cancelOnError: false,
             listenFor: duration,
-            pauseFor: const Duration(seconds: 2),
+            pauseFor: const Duration(seconds: 3),
           ),
         );
 
         // Wait for result or duration timeout
-        Timer(duration + const Duration(milliseconds: 500), () {
+        Timer(duration + const Duration(milliseconds: 800), () {
           if (!completer.isCompleted) {
             final isMatched = _matchesSinglePhrase(capturedWords, candidatePhrase) ||
                 _matchesWakePhrase(capturedWords);

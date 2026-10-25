@@ -293,7 +293,7 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// User Registration with optional Community Responder opt-in and Duress Password
+  /// User Registration with optional Community Responder opt-in, Avatar, and Duress Password
   Future<void> register({
     required String fullName,
     required String phone,
@@ -301,6 +301,7 @@ class AuthController extends ChangeNotifier {
     required String password,
     bool isCommunityResponder = false,
     String? emergencyPassword,
+    String? avatarUrl,
     required BuildContext ctx,
   }) async {
     _status = AuthStatus.loading;
@@ -326,6 +327,7 @@ class AuthController extends ChangeNotifier {
             'password': password,
             'is_community_responder': isCommunityResponder,
             'emergency_password': emergencyPassword,
+            'avatar_url': avatarUrl ?? 'guardian',
           }),
         ).timeout(const Duration(seconds: 10));
         debugPrint('[BACKEND] Registration response: ${res.statusCode} ${res.body}');
@@ -341,6 +343,7 @@ class AuthController extends ChangeNotifier {
         phone: phone,
         isCommunityResponder: isCommunityResponder,
         emergencyPassword: emergencyPassword,
+        avatarUrl: avatarUrl ?? 'guardian',
       );
 
       if (response.user != null) {
@@ -541,11 +544,11 @@ class AuthController extends ChangeNotifier {
     }
   }
 
-  /// Update user profile details (Name, Phone, Responder Opt-in, Emergency PIN)
-
+  /// Update user profile details (Name, Phone, Avatar, Responder Opt-in, Emergency PIN)
   Future<bool> updateProfile({
     required String fullName,
     required String phoneNumber,
+    String? avatarUrl,
     bool? isCommunityResponder,
     String? emergencyPassword,
   }) async {
@@ -560,6 +563,7 @@ class AuthController extends ChangeNotifier {
         userId: currentUser!.id,
         fullName: fullName.trim(),
         phoneNumber: phoneNumber.trim(),
+        avatarUrl: avatarUrl,
         isCommunityResponder: isCommunityResponder,
       );
 

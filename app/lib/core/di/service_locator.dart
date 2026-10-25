@@ -1,4 +1,5 @@
 import 'package:get_it/get_it.dart';
+import '../theme/theme_controller.dart';
 import '../services/supabase_service.dart';
 import '../services/location_service.dart';
 import '../services/ble_service.dart';
@@ -62,5 +63,8 @@ Future<void> setupServiceLocator() async {
   }
   if (!sl.isRegistered<AlertController>()) {
     sl.registerFactory(() => AlertController());
+  }
+  if (!sl.isRegistered<ThemeController>()) {
+    sl.registerLazySingleton(() => ThemeController());
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/avatar_presets.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
 import '../../../models/user_model.dart';
@@ -124,6 +126,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final authController = context.watch<AuthController>();
     final emergencyController = context.watch<EmergencyController>();
+    final themeController = context.watch<ThemeController>();
     final user = authController.currentUser;
     _syncUserToControllers(user);
 
@@ -195,23 +198,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 child: Column(
                   children: [
-                    Stack(
-                      alignment: Alignment.bottomRight,
-                      children: [
-                        const CircleAvatar(
-                          radius: 42,
-                          backgroundImage: AssetImage('assets/images/user_avatar.jpg'),
-                          backgroundColor: AppColors.inputBg,
-                        ),
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: const BoxDecoration(
-                            color: AppColors.success,
-                            shape: BoxShape.circle,
+                    GestureDetector(
+                      onTap: () => _showAvatarPickerSheet(context, authController, user),
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
+                        children: [
+                          AvatarPresets.renderWidget(
+                            avatarId: user?.avatarUrl,
+                            fallbackName: user?.fullName,
+                            size: 88,
+                            border: Border.all(color: Colors.white, width: 3),
                           ),
-                          child: const Icon(Icons.check, color: Colors.white, size: 14),
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.edit, color: Colors.white, size: 14),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () => _showAvatarPickerSheet(context, authController, user),
+                      child: Text(
+                        'Change Avatar (${AvatarPresets.getById(user?.avatarUrl).name})',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
+                      ),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -497,6 +516,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ],
 
               // Quick Actions List
+              // DISPLAY & THEME SETTINGS
+              const Text(
+                'DISPLAY & APPEARANCE',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.palette_outlined, color: AppColors.primary, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'App Color Theme',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Select light, dark, or follow system appearance',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        _buildThemeOption(
+                          label: 'Light',
+                          icon: Icons.light_mode_rounded,
+                          isSelected: themeController.themeMode == ThemeMode.light,
+                          onTap: () => themeController.setThemeMode(ThemeMode.light),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildThemeOption(
+                          label: 'Dark',
+                          icon: Icons.dark_mode_rounded,
+                          isSelected: themeController.themeMode == ThemeMode.dark,
+                          onTap: () => themeController.setThemeMode(ThemeMode.dark),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildThemeOption(
+                          label: 'System',
+                          icon: Icons.settings_brightness_rounded,
+                          isSelected: themeController.themeMode == ThemeMode.system,
+                          onTap: () => themeController.setThemeMode(ThemeMode.system),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+
               const Text(
                 'SAFETY PREFERENCES & FEATURES',
                 style: TextStyle(
@@ -528,10 +634,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 10),
 
               _buildMenuCard(
-                icon: Icons.lock_clock_outlined,
+                icon: Icons.lock_reset_rounded,
                 iconColor: AppColors.warning,
-                title: 'Reset Password via 6-digit OTP',
-                subtitle: 'Send one-time security code to your email',
+                title: 'Reset Password',
+                subtitle: 'Request password recovery via your registered email',
                 onTap: () => Navigator.pushNamed(context, '/reset-password'),
               ),
               const SizedBox(height: 10),
@@ -597,6 +703,169 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildThemeOption({
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.inputBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? AppColors.primary : AppColors.border,
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAvatarPickerSheet(BuildContext context, AuthController authController, UserModel? user) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Choose Your Safety Avatar',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Your avatar represents your profile across SafeLink and Community Responders',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                alignment: WrapAlignment.center,
+                children: AvatarPresets.all.map((preset) {
+                  final isSelected = (user?.avatarUrl ?? 'guardian') == preset.id;
+                  return GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final success = await authController.updateProfile(
+                        fullName: user?.fullName ?? '',
+                        phoneNumber: user?.phoneNumber ?? '',
+                        avatarUrl: preset.id,
+                        isCommunityResponder: user?.isCommunityResponder,
+                      );
+                      if (context.mounted && success) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Avatar updated to ${preset.name}!'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      }
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 60,
+                          height: 60,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: LinearGradient(
+                              colors: preset.gradient,
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            border: Border.all(
+                              color: isSelected ? AppColors.primary : Colors.white,
+                              width: isSelected ? 3.5 : 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: preset.gradient.first.withValues(alpha: 0.35),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              preset.emoji,
+                              style: const TextStyle(fontSize: 28),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          preset.name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

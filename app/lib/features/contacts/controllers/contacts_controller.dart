@@ -190,6 +190,79 @@ class ContactsController extends ChangeNotifier {
     }
   }
 
+  Future<void> updateContact({
+    required String id,
+    required String name,
+    required String phone,
+    String? email,
+  }) async {
+    isLoading = true;
+    notifyListeners();
+
+    try {
+      final user = _supabaseService.client.auth.currentUser;
+      final cleanEmail = (email != null && email.trim().isNotEmpty) ? email.trim() : null;
+      final updateData = {
+        'contact_name': name.trim(),
+        'phone_number': phone.trim(),
+        'email': cleanEmail,
+      };
+
+      bool saved = false;
+      // 1. Try Supabase direct update
+      try {
+        await _supabaseService.client
+            .from('emergency_contacts')
+            .update(updateData)
+            .eq('id', id);
+        saved = true;
+        debugPrint('[CONTACTS] Successfully updated via Supabase direct');
+      } catch (e) {
+        debugPrint('[CONTACTS] Supabase update notice: $e');
+      }
+
+      // 2. Fallback backend update
+      if (!saved && user != null) {
+        try {
+          final backendBase = await AppConstants.getEffectiveBackendUrl();
+          final uri = Uri.parse('$backendBase/users/contacts/$id');
+          await http.put(
+            uri,
+            headers: {
+              'Content-Type': 'application/json',
+              'ngrok-skip-browser-warning': 'true',
+            },
+            body: jsonEncode(updateData),
+          );
+        } catch (_) {}
+      }
+
+      // 3. Update in local cache
+      final idx = contacts.indexWhere((c) => c.id == id);
+      if (idx >= 0) {
+        final old = contacts[idx];
+        contacts[idx] = EmergencyContactModel(
+          id: old.id,
+          userId: old.userId,
+          contactName: name.trim(),
+          phoneNumber: phone.trim(),
+          email: cleanEmail,
+          consentStatus: old.consentStatus,
+          createdAt: old.createdAt,
+          updatedAt: DateTime.now(),
+        );
+        await _saveCachedContacts();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('Error updating contact: $e');
+      rethrow;
+    } finally {
+      isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> deleteContact(String id) async {
     isLoading = true;
     notifyListeners();

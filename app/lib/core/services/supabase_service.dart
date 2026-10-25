@@ -38,6 +38,7 @@ class SupabaseService {
     required String phone,
     bool isCommunityResponder = false,
     String? emergencyPassword,
+    String? avatarUrl,
   }) async {
     String? emergencyHash;
     if (emergencyPassword != null && emergencyPassword.isNotEmpty) {
@@ -49,6 +50,7 @@ class SupabaseService {
       'full_name': fullName.trim(),
       'phone_number': phone.trim(),
       'is_community_responder': isCommunityResponder,
+      'avatar_url': ?avatarUrl,
     };
     if (emergencyHash != null) {
       data['emergency_password_hash'] = emergencyHash;
@@ -68,6 +70,7 @@ class SupabaseService {
           'full_name': fullName.trim(),
           'phone_number': phone.trim(),
           'email': email.trim(),
+          'avatar_url': avatarUrl ?? 'guardian',
           'is_community_responder': isCommunityResponder,
           'responder_status': isCommunityResponder ? 'available' : null,
           'responder_opted_in_at': isCommunityResponder ? DateTime.now().toIso8601String() : null,
@@ -163,10 +166,10 @@ class SupabaseService {
     return await _client.auth.mfa.unenroll(factorId);
   }
 
-  /// Send password reset OTP code directly to email (Pure 6-digit OTP, no localhost links)
+  /// Send password reset instructions via Supabase
   Future<void> sendPasswordResetEmail(String email) async {
-    // Send 6-digit OTP code directly to email (avoids localhost redirect links)
-    await _client.auth.signInWithOtp(email: email.trim());
+    // Official Supabase password reset flow (sends recovery token / link)
+    await _client.auth.resetPasswordForEmail(email.trim());
   }
 
   /// Verify OTP sent via email for password recovery
@@ -178,7 +181,7 @@ class SupabaseService {
       return await _client.auth.verifyOTP(
         email: email.trim(),
         token: otp.trim(),
-        type: OtpType.magiclink,
+        type: OtpType.recovery,
       );
     } catch (_) {
       try {
@@ -191,7 +194,7 @@ class SupabaseService {
         return await _client.auth.verifyOTP(
           email: email.trim(),
           token: otp.trim(),
-          type: OtpType.recovery,
+          type: OtpType.magiclink,
         );
       }
     }
@@ -202,6 +205,7 @@ class SupabaseService {
     required String userId,
     String? fullName,
     String? phoneNumber,
+    String? avatarUrl,
     bool? isCommunityResponder,
   }) async {
     final Map<String, dynamic> updates = {
@@ -212,6 +216,9 @@ class SupabaseService {
     }
     if (phoneNumber != null && phoneNumber.trim().isNotEmpty) {
       updates['phone_number'] = phoneNumber.trim();
+    }
+    if (avatarUrl != null && avatarUrl.trim().isNotEmpty) {
+      updates['avatar_url'] = avatarUrl.trim();
     }
     if (isCommunityResponder != null) {
       updates['is_community_responder'] = isCommunityResponder;
@@ -229,6 +236,7 @@ class SupabaseService {
         data: {
           if (fullName != null && fullName.trim().isNotEmpty) 'full_name': fullName.trim(),
           if (phoneNumber != null && phoneNumber.trim().isNotEmpty) 'phone': phoneNumber.trim(),
+          if (avatarUrl != null && avatarUrl.trim().isNotEmpty) 'avatar_url': avatarUrl.trim(),
         },
       ));
     } catch (_) {}
