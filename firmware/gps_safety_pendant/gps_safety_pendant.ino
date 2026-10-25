@@ -186,9 +186,16 @@ void loadSettingsFromFlash() {
 
   deviceUUID = prefs.getString("dev_uuid", "");
 
-  // Load saved indoor anchor coordinates
-  lastLat = prefs.getString("last_lat", lastLat);
-  lastLon = prefs.getString("last_lon", lastLon);
+  // Load saved indoor anchor coordinates (Migrate old default to Strathmore)
+  lastLat = prefs.getString("last_lat", "-1.307300");
+  lastLon = prefs.getString("last_lon", "36.811800");
+  if (lastLat == "-1.292100" || lastLat.length() == 0) {
+    lastLat = "-1.307300";
+    lastLon = "36.811800";
+    currentLocSource = "Strathmore Univ Anchor";
+    prefs.putString("last_lat", lastLat);
+    prefs.putString("last_lon", lastLon);
+  }
 
   // Persist defaults if running for the first time
   prefs.putString("user_id", linkedUserId);
@@ -571,9 +578,25 @@ bool registerWearableInDatabase() {
 
 // 8.3 Log alert & SMS to Supabase `panic_events` table
 bool logAlertToSupabase(const String &lat, const String &lon, const String &smsText, const String &recipients, const String &source) {
+  // If WiFi is disconnected, attempt quick connect to record emergency in database
+  if (WiFi.status() != WL_CONNECTED && wifiSsid.length() > 0) {
+    Serial.println(F("[SUPABASE LOG] Attempting quick WiFi connect to dispatch alert to database..."));
+    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+    int r = 0;
+    while (WiFi.status() != WL_CONNECTED && r < 20) {
+      delay(250);
+      r++;
+    }
+  }
+
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("[SUPABASE LOG] WiFi not connected. Direct Supabase HTTPS logging skipped."));
+    Serial.println(F("[SUPABASE LOG] WiFi offline. SMS delivered via GSM cellular; Supabase log will sync when online."));
     return false;
+  }
+
+  // Ensure wearable is registered in DB so panic_events has the foreign key
+  if (deviceUUID.length() == 0) {
+    registerWearableInDatabase();
   }
 
   Serial.println(F("[SUPABASE LOG] Recording SOS & SMS event in Supabase panic_events table..."));
@@ -1164,17 +1187,21 @@ void setup() {
   // 3. Connect to WiFi if configured
   if (wifiSsid.length() > 0 && wifiSsid != "YOUR_WIFI_NAME") {
     Serial.printf("[WiFi] Connecting to %s...\n", wifiSsid.c_str());
+    WiFi.disconnect(true);
+    delay(200);
     WiFi.mode(WIFI_STA);
+    WiFi.setTxPower(WIFI_POWER_19_5dBm);
     WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
     int wCount = 0;
-    while (WiFi.status() != WL_CONNECTED && wCount < 15) {
+    while (WiFi.status() != WL_CONNECTED && wCount < 35) {
       delay(300);
       Serial.print('.');
       wCount++;
     }
     Serial.println();
     if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("[WiFi] Connected! IP: %s\n", WiFi.localIP().toString().c_str());
+      Serial.printf("[WiFi] Connected! IP: %s (Signal: %d dBm)\n",
+                    WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
       // Pre-fetch indoor Wi-Fi geolocation immediately so the pendant is armed with real coordinates!
       String wLat, wLon, wCity;
@@ -1187,7 +1214,15 @@ void setup() {
       syncContactsFromSupabase();
       registerWearableInDatabase();
     } else {
-      Serial.println(F("[WiFi] Not connected. Device will operate via GSM/SMS offline mode."));
+      int st = WiFi.status();
+      Serial.printf("[WiFi] Could not connect (Status code: %d). ", st);
+      if (st == WL_NO_SSID_AVAIL) {
+        Serial.printf("SSID '%s' not found. (Note: ESP32 requires 2.4 GHz WiFi).\n", wifiSsid.c_str());
+      } else if (st == WL_CONNECT_FAILED) {
+        Serial.println(F("Password rejected by router. Check spelling."));
+      } else {
+        Serial.println(F("Connection timeout. Pendant will operate in GSM/SMS mode."));
+      }
     }
   }
 
