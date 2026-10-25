@@ -119,8 +119,7 @@ SET full_name = EXCLUDED.full_name,
 -- Seed initial emergency contacts
 INSERT INTO public.emergency_contacts (user_id, contact_name, phone_number, consent_status)
 VALUES 
-    ('7426cae6-d358-4a02-9e2f-c7839a864e93', 'Joy (Primary)', '+254740034499', 'accepted'),
-    ('7426cae6-d358-4a02-9e2f-c7839a864e93', 'National Police Helpline', '+254709570000', 'accepted')
+    ('7426cae6-d358-4a02-9e2f-c7839a864e93', 'Joy (Primary)', '+254740034499', 'accepted')
 ON CONFLICT (user_id, phone_number) DO UPDATE
 SET contact_name = EXCLUDED.contact_name,
     consent_status = 'accepted',

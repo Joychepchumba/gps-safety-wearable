@@ -105,8 +105,8 @@ String linkedUserEmail = "chepchumbajr@gmail.com";
 
 String contact1        = "+254740034499";
 String contact1Name    = "Primary Contact";
-String contact2        = "+254709570000";
-String contact2Name    = "Police Helpline";
+String contact2        = "";
+String contact2Name    = "";
 String contact3        = "";
 String contact3Name    = "";
 
@@ -171,8 +171,14 @@ void loadSettingsFromFlash() {
 
   contact1     = prefs.getString("c1", contact1);
   contact1Name = prefs.getString("c1_name", contact1Name);
-  contact2     = prefs.getString("c2", contact2);
-  contact2Name = prefs.getString("c2_name", contact2Name);
+  contact2     = prefs.getString("c2", "");
+  contact2Name = prefs.getString("c2_name", "");
+  if (contact2 == "+254709570000") {
+    contact2 = "";
+    contact2Name = "";
+    prefs.putString("c2", "");
+    prefs.putString("c2_name", "");
+  }
   contact3     = prefs.getString("c3", contact3);
   contact3Name = prefs.getString("c3_name", contact3Name);
 
