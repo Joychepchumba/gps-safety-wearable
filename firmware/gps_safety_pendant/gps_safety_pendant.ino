@@ -875,15 +875,14 @@ void setupBLE() {
 }
 
 // ------------------------------------------------------------------------------
-// 11. TOUCH SENSOR ENGINE (Strict Press-Release-Press Double-Tap Pattern)
+// 11. TOUCH SENSOR ENGINE (Natural Double-Tap OR Hold-to-Panic)
 // ------------------------------------------------------------------------------
-enum TouchState { T_IDLE, T_PRESS1, T_GAP, T_TRIGGERED };
-TouchState tState = T_IDLE;
 bool touchStable = false;
 bool touchRaw = false;
 unsigned long rawChangedMs = 0;
-unsigned long pressStartMs = 0;
-unsigned long releaseMs = 0;
+unsigned long touchDownMs = 0;
+unsigned long lastTapTime = 0;
+int tapCount = 0;
 unsigned long lastTriggerMs = 0;
 bool triggerPending = false;
 
@@ -900,20 +899,17 @@ void updateTouch() {
   if (now - rawChangedMs >= DEBOUNCE_MS && touchStable != touchRaw) {
     touchStable = touchRaw;
 
-    if (touchStable) { // --- FINGER TOUCH DOWN (PRESS) ---
+    if (touchStable) { // --- FINGER TOUCH DOWN ---
+      touchDownMs = now;
       digitalWrite(PIN_STATUS_LED, HIGH);
 
-      if (tState == T_IDLE) {
-        // First Press
-        tState = T_PRESS1;
-        pressStartMs = now;
-        Serial.println(F("[TOUCH] [Step 1/3] Press 1 detected! Release and press again within 1.2s for SOS."));
-      } else if (tState == T_GAP && (now - releaseMs <= DOUBLE_GAP_MS)) {
-        // Second Press within gap window: PRESS-RELEASE-PRESS COMPLETE!
-        tState = T_TRIGGERED;
+      // Check if this is the 2nd tap within 1.5 seconds of the previous tap
+      if (tapCount == 1 && (now - lastTapTime <= 1500UL)) {
+        tapCount = 0;
+        touchDownMs = 0;
         if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
           Serial.println(F("\n========================================================"));
-          Serial.println(F(" [TOUCH] >>> PRESS-RELEASE-PRESS DOUBLE-TAP CONFIRMED! <<<"));
+          Serial.println(F(" [TOUCH] >>> DOUBLE-TAP SOS CONFIRMED! <<<"));
           Serial.println(F("========================================================\n"));
           currentTriggerReason = "pendant_touch";
           triggerPending = true;
@@ -922,39 +918,35 @@ void updateTouch() {
           Serial.println(F("[TOUCH] Double-tap detected but ignored (cooldown in effect)."));
         }
       } else {
-        // Out of sequence or too late, treat as new first press
-        tState = T_PRESS1;
-        pressStartMs = now;
-        Serial.println(F("[TOUCH] [Step 1/3] Press 1 detected! Release and press again for SOS."));
+        // First tap registered
+        tapCount = 1;
+        lastTapTime = now;
+        Serial.println(F("[TOUCH] Tap 1 detected! (Tap again within 1.5s OR keep holding for 1.5s for SOS)"));
       }
-    } else { // --- FINGER LIFTED (RELEASE) ---
+    } else { // --- FINGER LIFTED ---
       digitalWrite(PIN_STATUS_LED, LOW);
-
-      if (tState == T_PRESS1) {
-        // Valid Release 1 within allowable tap duration
-        if (now - pressStartMs < LONG_PRESS_MS) {
-          tState = T_GAP;
-          releaseMs = now;
-          Serial.println(F("[TOUCH] [Step 2/3] Released. Now TAP AGAIN to trigger SOS!"));
-        } else {
-          Serial.println(F("[TOUCH] Hold too long for double-tap. Reset to standby."));
-          tState = T_IDLE;
-        }
-      } else {
-        tState = T_IDLE;
-      }
+      touchDownMs = 0; // Reset hold timer upon release
     }
   }
 
-  // Gap window expired without 2nd press
-  if (tState == T_GAP && now - releaseMs > DOUBLE_GAP_MS) {
-    tState = T_IDLE;
-    Serial.println(F("[TOUCH] Double-tap timed out (no 2nd press). Reset to standby."));
+  // --- HOLD-TO-PANIC: Trigger immediately if held continuously for >= 1.5 seconds ---
+  if (touchStable && touchDownMs > 0 && (now - touchDownMs >= 1500UL)) {
+    touchDownMs = 0; // Prevent repeated triggers while still holding
+    tapCount = 0;
+    if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+      Serial.println(F("\n========================================================"));
+      Serial.println(F(" [TOUCH] >>> 1.5s HOLD-TO-PANIC SOS CONFIRMED! <<<"));
+      Serial.println(F("========================================================\n"));
+      currentTriggerReason = "pendant_touch";
+      triggerPending = true;
+      lastTriggerMs = now;
+    }
   }
 
-  // Stuck-high protection (finger held continuously for > 2 seconds)
-  if (tState == T_PRESS1 && touchStable && now - pressStartMs > 2000UL) {
-    tState = T_IDLE;
+  // Tap timeout: reset state if 2nd tap doesn't arrive within 1.5s
+  if (tapCount == 1 && (now - lastTapTime > 1500UL) && !touchStable) {
+    tapCount = 0;
+    Serial.println(F("[TOUCH] Tap timeout. Reset to standby."));
   }
 }
 
@@ -1022,7 +1014,7 @@ void removeSimPin(const char *pin) {
 
 void printMenu() {
   Serial.println(F("\n--- SafeGuard Console Commands ---"));
-  Serial.println(F(" Touch: Press-release-press pattern (double-tap within 1.2s) -> Trigger SOS"));
+  Serial.println(F(" Touch: Double-tap (tap-tap within 1.5s) OR Hold 1.5s -> Trigger SOS"));
   Serial.println(F(" Voice: Speak emergency keyword / shout near mic (GPIO2) -> Trigger SOS"));
   Serial.println(F(" touch = Test Touch Sensor pin (GPIO 1) live (5s monitor)"));
   Serial.println(F(" s = Send SOS Location SMS & log to Supabase"));
