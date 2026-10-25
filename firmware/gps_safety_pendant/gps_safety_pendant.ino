@@ -117,8 +117,8 @@ String backendUrl      = "https://unpaved-coherent-encroach.ngrok-free.dev";
 // Permanent 3D Mapbox Live Viewer (Zero ngrok dependency via GitHub Pages CDN!)
 String trackViewerUrl  = "https://joychepchumba.github.io/gps-safety-wearable/track.html";
 
-String wifiSsid        = "chumbaa";
-String wifiPass        = "H0tP01b+";
+String wifiSsid        = "The Kipkemboi's";
+String wifiPass        = "Ng'0mbe_h@y$.";
 const char simPin[]    = ""; // Leave empty if SIM has no PIN
 
 String deviceMacAddress = "";
@@ -134,11 +134,11 @@ const unsigned long DEBOUNCE_MS      = 40UL;     // touch debounce
 const unsigned long COOLDOWN_MS      = 25000UL;  // minimum time between triggered alerts
 const unsigned long HEARTBEAT_INT_MS = 60000UL;  // periodic DB heartbeat interval (60s)
 
-// Location state in RAM & Flash
-String lastLat = "-1.292100";   // Nairobi default calibration anchor
-String lastLon = "36.821900";
-String lastCity = "Nairobi";
-String currentLocSource = "Initial Default Anchor";
+// Location state in RAM & Flash (Strathmore University default)
+String lastLat = "-1.307300";   // Strathmore University, Nairobi
+String lastLon = "36.811800";
+String lastCity = "Strathmore University";
+String currentLocSource = "Strathmore Univ Anchor";
 unsigned long lastFixMs = 0;
 unsigned long lastBleLocMs = 0;
 unsigned long lastHeartbeatMs = 0;
@@ -427,10 +427,10 @@ bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
     return true;
   }
 
-  // Final fallback
-  lat = "-1.292100";
-  lon = "36.821900";
-  currentLocSource = "Default Nairobi Anchor";
+  // Final fallback (Strathmore University campus)
+  lat = "-1.307300";
+  lon = "36.811800";
+  currentLocSource = "Strathmore Univ Anchor";
   return true;
 }
 
@@ -625,9 +625,23 @@ bool logAlertToSupabase(const String &lat, const String &lon, const String &smsT
 // ------------------------------------------------------------------------------
 bool sendSMS(const String &number, const String &text) {
   if (number.length() < 7) return false;
-  Serial.printf("[SMS] Sending to %s: %s\n", number.c_str(), text.c_str());
+  Serial.printf("[SMS] Sending to %s...\n", number.c_str());
+
+  // 1. Drain any residual bytes in UART buffer before starting SMS command
+  while (SerialAT.available()) SerialAT.read();
+
+  // 2. Ensure command echo is permanently OFF (ATE0) so AT commands never leak into message
+  modem.sendAT(GF("E0"));
+  modem.waitResponse(400);
+
+  // 3. Dispatch SMS via TinyGSM
   bool ok = modem.sendSMS(number, text);
   Serial.println(ok ? F("[SMS] Delivery SUCCESSFUL!") : F("[SMS] Send FAILED!"));
+
+  // 4. Critical: Wait 2.5s for SIM800L to exit text mode, finalize 2G transmission, and drain
+  delay(2500);
+  while (SerialAT.available()) SerialAT.read();
+
   return ok;
 }
 
@@ -654,28 +668,34 @@ void sendLocationAlert(unsigned long waitMs = FIX_WAIT_MS) {
   String lat, lon;
   getFix(lat, lon, waitMs);
 
-  // Generate 3D Mapbox Live Tracking Link (Permanent zero-ngrok CDN viewer)
-  String mapboxLiveLink = trackViewerUrl + "?lat=" + lat + "&lng=" + lon + "&name=Joy";
+  // Generate Ephemeral Incident Reference (e.g. SOS-7426-3A1B)
+  String incidentRef = "SOS-" + linkedUserId.substring(0, 4) + "-" + String((unsigned long)(millis() % 0xFFFF), HEX);
+  incidentRef.toUpperCase();
+
+  // Secure 3D Tracking link without leaking personal names into URL parameters
+  String mapboxLiveLink = trackViewerUrl + "?lat=" + lat + "&lng=" + lon + "&id=" + incidentRef;
   String googleMapsLink = "https://maps.google.com/?q=" + lat + "," + lon;
 
-  String triggerDesc = (currentTriggerReason == "pendant_voice") ? "Voice SOS Keyword Detected" : "Pendant Touch Button Pressed";
-  String smsMsg = "EMERGENCY ALERT: Joy triggered " + triggerDesc + "!\n"
-                  "Live 3D Mapbox: " + mapboxLiveLink + "\n"
+  String triggerDesc = (currentTriggerReason == "pendant_voice") ? "Voice SOS Keyword" : "Pendant Touch";
+  String smsMsg = "EMERGENCY SOS: Joy triggered " + triggerDesc + "!\n"
+                  "Live 3D Map: " + mapboxLiveLink + "\n"
                   "Google Maps: " + googleMapsLink + "\n"
-                  "Method: " + currentLocSource;
+                  "Ref: " + incidentRef + " | " + currentLocSource;
 
-  // 3. Dispatch SMS to all configured emergency contacts
+  // 3. Dispatch SMS individually with safe guard delay between distinct recipients
   String recipients = "";
   if (contact1.length() >= 7) {
     sendSMS(contact1, smsMsg);
     recipients += contact1;
   }
   if (contact2.length() >= 7 && contact2 != contact1) {
+    delay(2000); // Guard delay so SIM800L completely closes Contact 1 before Contact 2
     sendSMS(contact2, smsMsg);
     if (recipients.length() > 0) recipients += ", ";
     recipients += contact2;
   }
   if (contact3.length() >= 7 && contact3 != contact1 && contact3 != contact2) {
+    delay(2000); // Guard delay
     sendSMS(contact3, smsMsg);
     if (recipients.length() > 0) recipients += ", ";
     recipients += contact3;
@@ -692,9 +712,12 @@ void sendLocationAlert(unsigned long waitMs = FIX_WAIT_MS) {
 
 void testSMS() {
   Serial.println(F("Sending test SMS with Permanent 3D Mapbox live link to Primary Contact..."));
-  String mapboxLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon + "&name=Joy";
-  String testMsg = "SafeGuard Test Alert:\nLive 3D Mapbox: " + mapboxLink +
-                   "\nGoogle Maps: https://maps.google.com/?q=" + lastLat + "," + lastLon;
+  String testRef = "TEST-" + String((unsigned long)(millis() % 0xFFFF), HEX);
+  testRef.toUpperCase();
+  String mapboxLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon + "&id=" + testRef;
+  String testMsg = "SafeGuard Test Alert:\nLive 3D Map: " + mapboxLink +
+                   "\nGoogle Maps: https://maps.google.com/?q=" + lastLat + "," + lastLon +
+                   "\nRef: " + testRef;
   sendSMS(contact1, testMsg);
 }
 
@@ -852,9 +875,9 @@ void setupBLE() {
 }
 
 // ------------------------------------------------------------------------------
-// 11. TOUCH SENSOR PATTERN MACHINE (Press-Release-Press Double-Tap)
+// 11. TOUCH SENSOR ENGINE (Strict Press-Release-Press Double-Tap Pattern)
 // ------------------------------------------------------------------------------
-enum TouchState { T_IDLE, T_PRESS1, T_GAP, T_DONE_WAIT_RELEASE };
+enum TouchState { T_IDLE, T_PRESS1, T_GAP, T_TRIGGERED };
 TouchState tState = T_IDLE;
 bool touchStable = false;
 bool touchRaw = false;
@@ -866,8 +889,9 @@ bool triggerPending = false;
 
 void updateTouch() {
   unsigned long now = millis();
-  bool raw = digitalRead(TOUCH_PIN) == HIGH;
+  bool raw = (digitalRead(TOUCH_PIN) == HIGH);
 
+  // Debounce filter
   if (raw != touchRaw) {
     touchRaw = raw;
     rawChangedMs = now;
@@ -876,40 +900,77 @@ void updateTouch() {
   if (now - rawChangedMs >= DEBOUNCE_MS && touchStable != touchRaw) {
     touchStable = touchRaw;
 
-    if (touchStable) { // Pressed
+    if (touchStable) { // --- FINGER TOUCH DOWN (PRESS) ---
+      digitalWrite(PIN_STATUS_LED, HIGH);
+
       if (tState == T_IDLE) {
+        // First Press
         tState = T_PRESS1;
         pressStartMs = now;
-      } else if (tState == T_GAP && now - releaseMs <= DOUBLE_GAP_MS) {
-        tState = T_DONE_WAIT_RELEASE; // Second press confirmed
+        Serial.println(F("[TOUCH] [Step 1/3] Press 1 detected! Release and press again within 1.2s for SOS."));
+      } else if (tState == T_GAP && (now - releaseMs <= DOUBLE_GAP_MS)) {
+        // Second Press within gap window: PRESS-RELEASE-PRESS COMPLETE!
+        tState = T_TRIGGERED;
         if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+          Serial.println(F("\n========================================================"));
+          Serial.println(F(" [TOUCH] >>> PRESS-RELEASE-PRESS DOUBLE-TAP CONFIRMED! <<<"));
+          Serial.println(F("========================================================\n"));
+          currentTriggerReason = "pendant_touch";
           triggerPending = true;
           lastTriggerMs = now;
         } else {
-          Serial.println(F("[TOUCH] Double-press ignored (cooldown in effect)."));
+          Serial.println(F("[TOUCH] Double-tap detected but ignored (cooldown in effect)."));
         }
       } else {
+        // Out of sequence or too late, treat as new first press
         tState = T_PRESS1;
         pressStartMs = now;
+        Serial.println(F("[TOUCH] [Step 1/3] Press 1 detected! Release and press again for SOS."));
       }
-    } else { // Released
+    } else { // --- FINGER LIFTED (RELEASE) ---
+      digitalWrite(PIN_STATUS_LED, LOW);
+
       if (tState == T_PRESS1) {
-        if (now - pressStartMs <= LONG_PRESS_MS) {
+        // Valid Release 1 within allowable tap duration
+        if (now - pressStartMs < LONG_PRESS_MS) {
           tState = T_GAP;
           releaseMs = now;
+          Serial.println(F("[TOUCH] [Step 2/3] Released. Now TAP AGAIN to trigger SOS!"));
         } else {
-          tState = T_IDLE; // Held too long, ignore
+          Serial.println(F("[TOUCH] Hold too long for double-tap. Reset to standby."));
+          tState = T_IDLE;
         }
-      } else if (tState == T_DONE_WAIT_RELEASE) {
+      } else {
         tState = T_IDLE;
       }
     }
   }
 
-  // Gap expired without 2nd press
-  if (tState == T_GAP && now - releaseMs > DOUBLE_GAP_MS) tState = T_IDLE;
-  // Stuck-high protection
-  if (tState == T_PRESS1 && touchStable && now - pressStartMs > LONG_PRESS_MS) tState = T_IDLE;
+  // Gap window expired without 2nd press
+  if (tState == T_GAP && now - releaseMs > DOUBLE_GAP_MS) {
+    tState = T_IDLE;
+    Serial.println(F("[TOUCH] Double-tap timed out (no 2nd press). Reset to standby."));
+  }
+
+  // Stuck-high protection (finger held continuously for > 2 seconds)
+  if (tState == T_PRESS1 && touchStable && now - pressStartMs > 2000UL) {
+    tState = T_IDLE;
+  }
+}
+
+void testTouchLive() {
+  Serial.println(F("\n--- Live Touch Sensor Pin Monitor (GPIO 1) ---"));
+  Serial.println(F("Touch the TTP223 pad now to observe pin state:"));
+  unsigned long start = millis();
+  while (millis() - start < 5000) {
+    bool val = (digitalRead(TOUCH_PIN) == HIGH);
+    Serial.printf("[GPIO 1] %s | Raw Voltage: %s\n",
+                  val ? "TOUCHED (HIGH)" : "RELEASED (LOW)",
+                  val ? "3.3V" : "0.0V");
+    digitalWrite(PIN_STATUS_LED, val ? HIGH : LOW);
+    delay(200);
+  }
+  Serial.println(F("--- End of Touch Monitor ---\n"));
 }
 
 // ------------------------------------------------------------------------------
@@ -961,8 +1022,9 @@ void removeSimPin(const char *pin) {
 
 void printMenu() {
   Serial.println(F("\n--- SafeGuard Console Commands ---"));
-  Serial.println(F(" Touch: Double-tap (press-release-press) -> Trigger SOS"));
+  Serial.println(F(" Touch: Press-release-press pattern (double-tap within 1.2s) -> Trigger SOS"));
   Serial.println(F(" Voice: Speak emergency keyword / shout near mic (GPIO2) -> Trigger SOS"));
+  Serial.println(F(" touch = Test Touch Sensor pin (GPIO 1) live (5s monitor)"));
   Serial.println(F(" s = Send SOS Location SMS & log to Supabase"));
   Serial.println(F(" l = Show current location (Multi-tier: GPS/WiFi/BLE/Anchor)"));
   Serial.println(F(" g = Test indoor Wi-Fi Geolocation live (ip-api.com)"));
@@ -1164,6 +1226,9 @@ void setup() {
     } else {
       Serial.println(F("[GSM] Not registered yet. Continuing startup..."));
     }
+    // Permanently disable command echoing to prevent AT commands from leaking into SMS payloads
+    modem.sendAT(GF("E0"));
+    modem.waitResponse(500);
   }
 
   // 5. Initialize GPS UART (UART0 on GPIO4, GPIO3)
@@ -1230,6 +1295,8 @@ void loop() {
       showLocation();
     } else if (cmd == "v") {
       monitorMicLive();
+    } else if (cmd == "touch" || cmd == "touchtest") {
+      testTouchLive();
     } else if (cmd == "g") {
       String gLat, gLon, gCity;
       if (fetchWifiGeolocation(gLat, gLon, gCity)) {
@@ -1252,7 +1319,9 @@ void loop() {
     } else if (cmd == "r") {
       registerWearableInDatabase();
     } else if (cmd == "m") {
-      String mLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon + "&name=Joy";
+      String incidentRef = "SOS-" + linkedUserId.substring(0, 4) + "-" + String((unsigned long)(millis() % 0xFFFF), HEX);
+      incidentRef.toUpperCase();
+      String mLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon + "&id=" + incidentRef;
       Serial.println(F("\n--- 3D Mapbox Live Telemetry Link ---"));
       Serial.printf("Coordinates: %s, %s [%s]\n", lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
       Serial.printf("Live URL:    %s\n", mLink.c_str());
