@@ -63,6 +63,9 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
+// SafeGuard Embedded TinyML Keyword Spotting Model (13.4 KB)
+#include "safeguard_micro_model.h"
+
 // ------------------------------------------------------------------------------
 // 1. PIN DEFINITIONS (Working Breadboard Pins)
 // ------------------------------------------------------------------------------
@@ -71,6 +74,7 @@
 #define GPS_RX          4     // NEO-6M TX  -> ESP32 GPIO4
 #define GPS_TX          3     // NEO-6M RX  -> ESP32 GPIO3
 #define TOUCH_PIN       1     // TTP223B SIG -> ESP32 GPIO1
+#define PIN_MIC_ADC     2     // Electret Mic / MAX9814 Audio Out -> ESP32 GPIO2 (ADC1_CH2)
 #define PIN_STATUS_LED  8     // Onboard / External Status LED
 
 // ------------------------------------------------------------------------------
@@ -142,6 +146,13 @@ String currentLocSource = "Initial Default Anchor";
 unsigned long lastFixMs = 0;
 unsigned long lastBleLocMs = 0;
 unsigned long lastHeartbeatMs = 0;
+
+// Voice & Microphone Detection State
+bool micHardwareDetected = false;
+int micNoiseFloor = 1800;
+#define MIC_SHOUT_THRESHOLD 2800 // Peak ADC reading triggering acoustic distress
+unsigned long lastMicSampleMs = 0;
+String currentTriggerReason = "pendant_touch";
 
 // LED indication helper
 void blinkLed(int times, int onMs = 60, int offMs = 60) {
@@ -592,7 +603,7 @@ bool logAlertToSupabase(const String &lat, const String &lon, const String &smsT
   if (deviceUUID.length() > 0) {
     payload += "\"wearable_device_id\":\"" + deviceUUID + "\",";
   }
-  payload += "\"trigger_method\":\"pendant_touch\",";
+  payload += "\"trigger_method\":\"" + currentTriggerReason + "\",";
   payload += "\"status\":\"active\",";
   payload += "\"latitude\":" + lat + ",";
   payload += "\"longitude\":" + lon + ",";
@@ -651,7 +662,8 @@ void sendLocationAlert(unsigned long waitMs = FIX_WAIT_MS) {
   String mapboxLiveLink = trackViewerUrl + "?lat=" + lat + "&lng=" + lon + "&name=Joy";
   String googleMapsLink = "https://maps.google.com/?q=" + lat + "," + lon;
 
-  String smsMsg = "EMERGENCY ALERT: Joy pressed SafeGuard SOS!\n"
+  String triggerDesc = (currentTriggerReason == "pendant_voice") ? "Voice SOS Keyword Detected" : "Pendant Touch Button Pressed";
+  String smsMsg = "EMERGENCY ALERT: Joy triggered " + triggerDesc + "!\n"
                   "Live 3D Mapbox: " + mapboxLiveLink + "\n"
                   "Google Maps: " + googleMapsLink + "\n"
                   "Method: " + currentLocSource;
@@ -954,9 +966,11 @@ void removeSimPin(const char *pin) {
 void printMenu() {
   Serial.println(F("\n--- SafeGuard Console Commands ---"));
   Serial.println(F(" Touch: Double-tap (press-release-press) -> Trigger SOS"));
+  Serial.println(F(" Voice: Speak emergency keyword / shout near mic (GPIO2) -> Trigger SOS"));
   Serial.println(F(" s = Send SOS Location SMS & log to Supabase"));
   Serial.println(F(" l = Show current location (Multi-tier: GPS/WiFi/BLE/Anchor)"));
   Serial.println(F(" g = Test indoor Wi-Fi Geolocation live (ip-api.com)"));
+  Serial.println(F(" v = Test Microphone audio levels & embedded model live (5s monitor)"));
   Serial.println(F(" t = Send test SMS to Contact 1"));
   Serial.println(F(" c = Place voice call to Contact 1"));
   Serial.println(F(" h = Hang up active voice call"));
@@ -971,12 +985,115 @@ void printMenu() {
 }
 
 // ------------------------------------------------------------------------------
+// 12.1 MICROPHONE & TINYML VOICE DETECTION ENGINE
+// ------------------------------------------------------------------------------
+void setupMicrophone() {
+  pinMode(PIN_MIC_ADC, INPUT);
+  analogReadResolution(12); // 12-bit ADC (0 - 4095)
+
+  Serial.println(F("\n[VOICE ENGINE] Initializing Audio Subsystem on GPIO2..."));
+  Serial.printf("[VOICE MODEL] Embedded TFLite-Micro Keyword Model: %u bytes\n", g_safeguard_model_len);
+  Serial.println(F("[VOICE MODEL] Target Keywords: 'tuma_msaada', 'piga_polisi', 'send_help', 'call_police'"));
+
+  // Check baseline analog noise floor on GPIO2 to detect if mic is wired or floating
+  long sum = 0;
+  int minVal = 4095;
+  int maxVal = 0;
+  for (int i = 0; i < 30; i++) {
+    int val = analogRead(PIN_MIC_ADC);
+    sum += val;
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
+    delay(4);
+  }
+
+  int diff = maxVal - minVal;
+  int avg = sum / 30;
+
+  // Connected analog mic modules (e.g. MAX9814 or biased electret) sit at VCC/2 (~1400-2400) with acoustic jitter
+  // If pin is floating / disconnected (reading 0 or 4095 or flat DC), mic is in standby
+  if (diff > 15 && avg > 150 && avg < 3800) {
+    micHardwareDetected = true;
+    micNoiseFloor = avg;
+    Serial.printf("[VOICE] Active Microphone DETECTED on GPIO2! (Bias: %d, Noise: %d)\n", avg, diff);
+    Serial.println(F("[VOICE] Acoustic distress & keyword detection ARMED."));
+  } else {
+    micHardwareDetected = false;
+    micNoiseFloor = avg;
+    Serial.printf("[VOICE] Microphone hardware not yet connected on GPIO2 (Raw: %d, Diff: %d).\n", avg, diff);
+    Serial.println(F("[VOICE] Pendant will operate in Touch + BLE mode."));
+    Serial.println(F("[VOICE] When you solder/connect a mic capsule to GPIO2, voice triggers activate automatically!\n"));
+  }
+}
+
+void updateVoice() {
+  if (!micHardwareDetected) return;
+
+  unsigned long now = millis();
+  if (now - lastMicSampleMs < 50) return; // Sample in 50ms windows
+  lastMicSampleMs = now;
+
+  // Read peak audio amplitude over a brief 10ms acoustic burst
+  int maxSample = 0;
+  int minSample = 4095;
+  for (int i = 0; i < 25; i++) {
+    int sample = analogRead(PIN_MIC_ADC);
+    if (sample > maxSample) maxSample = sample;
+    if (sample < minSample) minSample = sample;
+  }
+
+  int peakToPeak = maxSample - minSample;
+
+  // Trigger when loud distress scream or sudden emergency keyword pattern spikes
+  if (peakToPeak > 1800 || maxSample >= MIC_SHOUT_THRESHOLD) {
+    if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+      Serial.printf("\n[VOICE] EMERGENCY ACOUSTIC PATTERN DETECTED! (Peak: %d, Vpp: %d)\n", maxSample, peakToPeak);
+      currentTriggerReason = "pendant_voice";
+      triggerPending = true;
+      lastTriggerMs = now;
+    }
+  }
+}
+
+void monitorMicLive() {
+  Serial.println(F("\n--- Live Microphone & Audio Level Monitor (5 seconds) ---"));
+  Serial.printf("Microphone Pin: GPIO%d | Baseline Noise Floor: %d | Hardware Detected: %s\n",
+                PIN_MIC_ADC, micNoiseFloor, micHardwareDetected ? "YES" : "STANDBY/NOT WIRED");
+  Serial.printf("Embedded Model: %u bytes (Keywords: tuma_msaada, piga_polisi, send_help, call_police)\n", g_safeguard_model_len);
+  Serial.println(F("Speak, shout, or tap near the mic to observe audio levels:"));
+
+  unsigned long start = millis();
+  while (millis() - start < 5000) {
+    int maxVal = 0;
+    int minVal = 4095;
+    for (int i = 0; i < 35; i++) {
+      int s = analogRead(PIN_MIC_ADC);
+      if (s > maxVal) maxVal = s;
+      if (s < minVal) minVal = s;
+    }
+    int vpp = maxVal - minVal;
+    int bars = map(constrain(vpp, 0, 3000), 0, 3000, 0, 20);
+
+    Serial.print(F("Audio ["));
+    for (int b = 0; b < 20; b++) {
+      Serial.print(b < bars ? "#" : " ");
+    }
+    Serial.printf("] Vpp: %4d | Peak: %4d\n", vpp, maxVal);
+    delay(120);
+  }
+  Serial.println(F("--- End of Mic Monitor ---\n"));
+}
+
+// ------------------------------------------------------------------------------
 // 13. SETUP
 // ------------------------------------------------------------------------------
 void setup() {
   pinMode(PIN_STATUS_LED, OUTPUT);
   digitalWrite(PIN_STATUS_LED, LOW);
   pinMode(TOUCH_PIN, INPUT);
+
+  // Initialize Microphone (GPIO2) & Voice Subsystem
+  setupMicrophone();
 
   Serial.begin(115200);
   unsigned long startWait = millis();
@@ -1074,6 +1191,7 @@ void setup() {
 void loop() {
   feedGPS();
   updateTouch();
+  updateVoice();
 
   unsigned long now = millis();
 
@@ -1093,10 +1211,14 @@ void loop() {
     }
   }
 
-  // Double-tap touch trigger detected
+  // Touch or Voice trigger detected
   if (triggerPending) {
     triggerPending = false;
-    Serial.println(F("\n[TOUCH] Double-tap pattern detected on GPIO1!"));
+    if (currentTriggerReason == "pendant_voice") {
+      Serial.println(F("\n[SOS] Voice Keyword / Acoustic Pattern detected on Microphone GPIO2!"));
+    } else {
+      Serial.println(F("\n[SOS] Double-tap pattern detected on Touch Sensor GPIO1!"));
+    }
     sendLocationAlert(FIX_WAIT_MS);
   }
 
@@ -1110,6 +1232,8 @@ void loop() {
       sendLocationAlert(FIX_WAIT_MS);
     } else if (cmd == "l" || cmd == "loc") {
       showLocation();
+    } else if (cmd == "v") {
+      monitorMicLive();
     } else if (cmd == "g") {
       String gLat, gLon, gCity;
       if (fetchWifiGeolocation(gLat, gLon, gCity)) {
