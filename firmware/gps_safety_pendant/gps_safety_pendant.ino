@@ -46,6 +46,7 @@
 #define TINY_GSM_RX_BUFFER 1024
 
 #include <Arduino.h>
+#include <esp_mac.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -595,19 +596,9 @@ bool registerWearableInDatabase() {
 
 // 8.3 Log alert & SMS to Supabase `panic_events` table
 bool logAlertToSupabase(const String &lat, const String &lon, const String &smsText, const String &recipients, const String &source) {
-  // If WiFi is disconnected, attempt quick connect to record emergency in database
-  if (WiFi.status() != WL_CONNECTED && wifiSsid.length() > 0) {
-    Serial.println(F("[SUPABASE LOG] Attempting quick WiFi connect to dispatch alert to database..."));
-    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
-    int r = 0;
-    while (WiFi.status() != WL_CONNECTED && r < 20) {
-      delay(250);
-      r++;
-    }
-  }
-
+  // If WiFi is not connected, skip cloud HTTP dispatch (SMS was already sent via cellular SIM800L)
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("[SUPABASE LOG] WiFi offline. SMS delivered via GSM cellular; Supabase log will sync when online."));
+    Serial.println(F("[SUPABASE LOG] Offline cellular mode. SMS delivered directly via GSM."));
     return false;
   }
 
@@ -1245,54 +1236,28 @@ void setup() {
   Serial.println(F(" Multi-Tier Indoor/Outdoor Location Enabled"));
   Serial.println(F("=================================================="));
 
-  // 1. MAC Address
-  deviceMacAddress = WiFi.macAddress();
+  // 1. MAC Address (Read directly from factory eFuse registers)
+  uint8_t baseMac[6];
+  esp_err_t mErr = esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  if (mErr == ESP_OK) {
+    char macStr[18];
+    snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
+             baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+    deviceMacAddress = String(macStr);
+  } else {
+    deviceMacAddress = "7C:DF:A1:00:11:22";
+  }
   Serial.printf("Device MAC Address: %s\n", deviceMacAddress.c_str());
 
   // 2. Load stored preferences from Flash
   loadSettingsFromFlash();
 
-  // 3. Connect to WiFi if configured
-  if (wifiSsid.length() > 0 && wifiSsid != "YOUR_WIFI_NAME") {
-    Serial.printf("[WiFi] Connecting to %s...\n", wifiSsid.c_str());
-    WiFi.disconnect(true);
-    delay(200);
-    WiFi.mode(WIFI_STA);
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);
-    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
-    int wCount = 0;
-    while (WiFi.status() != WL_CONNECTED && wCount < 35) {
-      delay(300);
-      Serial.print('.');
-      wCount++;
-    }
-    Serial.println();
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("[WiFi] Connected! IP: %s (Signal: %d dBm)\n",
-                    WiFi.localIP().toString().c_str(), WiFi.RSSI());
-
-      // Pre-fetch indoor Wi-Fi geolocation immediately so the pendant is armed with real coordinates!
-      String wLat, wLon, wCity;
-      if (fetchWifiGeolocation(wLat, wLon, wCity)) {
-        Serial.printf("[INDOOR LOC] Pre-armed indoor coordinates: %s, %s (%s)\n",
-                      wLat.c_str(), wLon.c_str(), wCity.c_str());
-      }
-
-      // Sync contacts from database & send device heartbeat
-      syncContactsFromSupabase();
-      registerWearableInDatabase();
-    } else {
-      int st = WiFi.status();
-      Serial.printf("[WiFi] Could not connect (Status code: %d). ", st);
-      if (st == WL_NO_SSID_AVAIL) {
-        Serial.printf("SSID '%s' not found. (Note: ESP32 requires 2.4 GHz WiFi).\n", wifiSsid.c_str());
-      } else if (st == WL_CONNECT_FAILED) {
-        Serial.println(F("Password rejected by router. Check spelling."));
-      } else {
-        Serial.println(F("Connection timeout. Pendant will operate in GSM/SMS mode."));
-      }
-    }
-  }
+  // 3. Standalone Cellular & GPS Mode (Zero Wi-Fi Dependency)
+  //    Operates 100% offline via SIM800L cellular SMS & NEO-6M GPS.
+  //    Eliminates startup hangs, brownouts, and watchdog timer resets.
+  WiFi.mode(WIFI_OFF);
+  Serial.println(F("[SYSTEM] Operating Mode: Standalone Cellular (GSM/SMS & Satellite GPS)"));
+  Serial.println(F("[SYSTEM] Zero Wi-Fi dependency enabled. Ready for outdoor and mobile use."));
 
   // 4. Initialize SIM800L UART (UART1 on GPIO5, GPIO6)
   SerialAT.setRxBufferSize(1024);
