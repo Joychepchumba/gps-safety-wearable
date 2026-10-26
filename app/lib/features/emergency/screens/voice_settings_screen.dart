@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
@@ -19,6 +20,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   bool _isListeningEnabled = true;
   String _selectedPhrase = 'tuma msaada';
   bool _isTesting = false;
+  int _countdownSeconds = 0;
+  Timer? _countdownTimer;
+  String _liveHearingText = '';
   String? _testResultText;
   bool? _testResultMatched;
 
@@ -43,6 +47,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _customPhraseController.dispose();
     super.dispose();
   }
@@ -56,33 +61,51 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
       return;
     }
 
+    _countdownTimer?.cancel();
     setState(() {
       _isTesting = true;
+      _countdownSeconds = 4;
+      _liveHearingText = 'Listening... Speak your phrase now!';
       _testResultText = null;
       _testResultMatched = null;
     });
 
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_countdownSeconds > 1) {
+          _countdownSeconds--;
+        } else {
+          _countdownSeconds = 0;
+          timer.cancel();
+        }
+      });
+    });
+
     final res = await _voiceService.recordAndTestPhrase(
       phraseToTest,
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 4),
       onPartialHeard: (partial) {
         if (mounted) {
           setState(() {
-            _testResultText = 'Hearing: "$partial"...';
+            _liveHearingText = 'Hearing: "$partial"...';
           });
         }
       },
     );
 
+    _countdownTimer?.cancel();
     if (!mounted) return;
     setState(() {
       _isTesting = false;
+      _countdownSeconds = 0;
       if (res['success'] == true) {
         final transcription = res['transcription'] as String;
         final matched = res['matched'] as bool;
-        _testResultText = transcription.isNotEmpty
-            ? 'Model Heard: "$transcription"'
-            : 'Model did not catch clear speech. Speak clearly into mic.';
+        _testResultText = transcription;
         _testResultMatched = matched;
       } else {
         _testResultText = res['error'] ?? 'Audio verification failed';
@@ -288,7 +311,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                           )
                         : const Icon(Icons.mic_external_on_rounded, color: Colors.white),
                     label: Text(
-                      _isTesting ? 'Listening... Speak your phrase now!' : 'Record & Test Recognition',
+                      _isTesting
+                          ? 'Recording... ($_countdownSeconds s left)'
+                          : 'Record & Test Recognition',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -298,6 +323,35 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
+
+                  // Live Typing Indicator while testing
+                  if (_isTesting) ...[
+                    Container(
+                      margin: const EdgeInsets.only(top: 4, bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.graphic_eq_rounded, color: AppColors.primary, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _liveHearingText,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
 
                   // Simulation Button for Instant Verification
                   OutlinedButton.icon(
@@ -320,6 +374,61 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
+                  ),
+
+                  // Live Speech Monitor: Types what is heard continuously
+                  ValueListenableBuilder<String>(
+                    valueListenable: _voiceService.lastHeardWords,
+                    builder: (context, words, _) {
+                      return Container(
+                        margin: const EdgeInsets.only(top: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppColors.background,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: words.isNotEmpty
+                                ? AppColors.success.withValues(alpha: 0.6)
+                                : AppColors.border,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              words.isNotEmpty ? Icons.record_voice_over_rounded : Icons.mic_none_rounded,
+                              color: words.isNotEmpty ? AppColors.success : AppColors.textSecondary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    words.isNotEmpty ? 'What was just heard:' : 'Speech Engine Status:',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: words.isNotEmpty ? AppColors.success : AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    words.isNotEmpty ? '"$words"' : 'Listening actively for keywords...',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontStyle: words.isNotEmpty ? FontStyle.italic : FontStyle.normal,
+                                      color: words.isNotEmpty ? AppColors.textPrimary : AppColors.textSecondary,
+                                      fontWeight: words.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
 
                   if (_testResultText != null) ...[
@@ -349,7 +458,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                               Text(
                                 _testResultMatched == true
                                     ? 'Recognition Matched & Verified!'
-                                    : 'Phrase Not Detected',
+                                    : 'Phrase Not Recognized',
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: _testResultMatched == true ? AppColors.success : AppColors.sosRed,
@@ -359,9 +468,16 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            _testResultText!,
-                            style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+                            'Model Heard: "${_testResultText!}"',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                           ),
+                          if (_testResultMatched != true) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tip: Speak closer to phone mic. Model matches "${_customPhraseController.text.trim()}".',
+                              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                            ),
+                          ],
                         ],
                       ),
                     ),

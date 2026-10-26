@@ -63,6 +63,9 @@ class VoiceActivationService {
 
   OnWakeWordDetectedCallback? onWakeWordDetected;
 
+  final ValueNotifier<String> lastHeardWords = ValueNotifier<String>('');
+  final ValueNotifier<bool> isTranscribing = ValueNotifier<bool>(false);
+
   bool get isListening => _wantListening;
   bool get isEnabled => _isEnabled;
   String get wakePhrase => _wakePhrase;
@@ -235,6 +238,7 @@ class VoiceActivationService {
         onResult: (result) {
           final words = result.recognizedWords.toLowerCase().trim();
           if (words.isEmpty) return;
+          lastHeardWords.value = words;
           debugPrint('🎙️ [VOICE HEARD] "$words"');
           if (_matchesWakePhrase(words)) {
             _fireTrigger('on-device speech recognition: "$words"');
@@ -325,7 +329,10 @@ class VoiceActivationService {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final transcription = (data['transcription'] ?? '').toString().toLowerCase().trim();
-        debugPrint('[VOICE WHISPER] Heard: "$transcription"');
+        if (transcription.isNotEmpty) {
+          lastHeardWords.value = transcription;
+          debugPrint('🎙️ [VOICE ASR] Server Heard: "$transcription"');
+        }
         final detected = data['emergency_detected'] == true || _matchesWakePhrase(transcription);
         if (detected) {
           _fireTrigger('backend whisper: "$transcription"');
@@ -468,23 +475,37 @@ class VoiceActivationService {
 
       // Stop continuous listener temporarily
       stopListening();
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 250));
 
-      // Attempt 1: Try on-device recognition for rapid real-time verification
-      final testSpeech = stt.SpeechToText();
-      final initOk = await testSpeech.initialize();
-      if (initOk) {
-        final completer = Completer<Map<String, dynamic>>();
-        String capturedWords = '';
+      isTranscribing.value = true;
+      String livePartial = '';
 
-        final isSwahiliCandidate = candidatePhrase.toLowerCase().contains('msaada') ||
-            candidatePhrase.toLowerCase().contains('tuma') ||
-            candidatePhrase.toLowerCase().contains('nisaidie') ||
-            candidatePhrase.toLowerCase().contains('polisi') ||
-            candidatePhrase.toLowerCase().contains('okoa');
-        String? targetLocale;
-        if (isSwahiliCandidate) {
-          try {
+      // 1. Start audio recorder immediately from second 0
+      final testRecorder = AudioRecorder();
+      final testPath = '${Directory.systemTemp.path}/voice_test_${DateTime.now().millisecondsSinceEpoch}.wav';
+
+      try {
+        await testRecorder.start(
+          const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1),
+          path: testPath,
+        );
+      } catch (e) {
+        debugPrint('[VOICE TEST] Recorder start notice: $e');
+      }
+
+      // 2. Concurrently attempt on-device STT for instant live typing if available
+      stt.SpeechToText? testSpeech;
+      try {
+        testSpeech = stt.SpeechToText();
+        final initOk = await testSpeech.initialize(onError: (_) {});
+        if (initOk) {
+          final isSwahiliCandidate = candidatePhrase.toLowerCase().contains('msaada') ||
+              candidatePhrase.toLowerCase().contains('tuma') ||
+              candidatePhrase.toLowerCase().contains('nisaidie') ||
+              candidatePhrase.toLowerCase().contains('polisi') ||
+              candidatePhrase.toLowerCase().contains('okoa');
+          String? targetLocale;
+          if (isSwahiliCandidate) {
             final locales = await testSpeech.locales();
             for (final loc in locales) {
               if (loc.localeId.toLowerCase().startsWith('sw')) {
@@ -492,107 +513,98 @@ class VoiceActivationService {
                 break;
               }
             }
-          } catch (_) {}
-        }
-
-        await testSpeech.listen(
-          onResult: (result) {
-            capturedWords = result.recognizedWords;
-            onPartialHeard?.call(capturedWords);
-            final isMatched = _matchesSinglePhrase(capturedWords, candidatePhrase) ||
-                _matchesWakePhrase(capturedWords);
-            if (isMatched && !completer.isCompleted) {
-              completer.complete({
-                'success': true,
-                'transcription': capturedWords,
-                'matched': true,
-                'keyword': candidatePhrase,
-              });
-            }
-          },
-          listenOptions: stt.SpeechListenOptions(
-            localeId: targetLocale,
-            listenMode: stt.ListenMode.dictation,
-            partialResults: true,
-            cancelOnError: false,
-            listenFor: duration,
-            pauseFor: const Duration(seconds: 3),
-          ),
-        );
-
-        // Wait for result or duration timeout
-        Timer(duration + const Duration(milliseconds: 800), () {
-          if (!completer.isCompleted) {
-            final isMatched = _matchesSinglePhrase(capturedWords, candidatePhrase) ||
-                _matchesWakePhrase(capturedWords);
-            completer.complete({
-              'success': capturedWords.isNotEmpty,
-              'transcription': capturedWords,
-              'matched': isMatched,
-              'keyword': candidatePhrase,
-            });
           }
-        });
 
-        final result = await completer.future;
-        try { testSpeech.stop(); } catch (_) {}
-
-        // If on-device speech captured valid words, return it directly!
-        if (result['transcription'] != null && (result['transcription'] as String).isNotEmpty) {
-          if (_isEnabled) unawaited(startListening());
-          return result;
+          unawaited(testSpeech.listen(
+            onResult: (result) {
+              livePartial = result.recognizedWords;
+              if (livePartial.isNotEmpty) {
+                lastHeardWords.value = livePartial;
+                onPartialHeard?.call(livePartial);
+              }
+            },
+            listenOptions: stt.SpeechListenOptions(
+              localeId: targetLocale,
+              listenMode: stt.ListenMode.dictation,
+              partialResults: true,
+              cancelOnError: false,
+              listenFor: duration,
+              pauseFor: const Duration(seconds: 2),
+            ),
+          ));
         }
-      }
+      } catch (_) {}
 
-      // Attempt 2: AudioRecorder + Backend Google ASR fallback
-      // (Used when on-device STT is unavailable, returns silence, or needs cloud verification)
-      final testRecorder = AudioRecorder();
-      final testPath = '${Directory.systemTemp.path}/voice_test_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-      await testRecorder.start(
-        const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1),
-        path: testPath,
-      );
-
+      // 3. Wait for the test duration
       await Future.delayed(duration);
-      final recordedPath = await testRecorder.stop();
-      await testRecorder.dispose();
+
+      // 4. Stop speech & recorder
+      try { await testSpeech?.stop(); } catch (_) {}
+      String? recordedPath;
+      try {
+        recordedPath = await testRecorder.stop();
+      } catch (_) {}
+      try { await testRecorder.dispose(); } catch (_) {}
 
       final file = File(recordedPath ?? testPath);
-      if (!file.existsSync() || file.lengthSync() < 500) {
-        if (_isEnabled) unawaited(startListening());
-        return {'success': false, 'error': 'No audio recorded. Please speak clearly into microphone.'};
+      String finalTranscription = livePartial;
+      String? detectedKeyword;
+      bool matched = false;
+
+      // 5. Send recorded audio clip to backend multilingual ASR
+      if (file.existsSync() && file.lengthSync() > 1000) {
+        try {
+          final baseUrl = await AppConstants.getEffectiveBackendUrl();
+          final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/voice/detect'))
+            ..headers['ngrok-skip-browser-warning'] = 'true'
+            ..fields['auto_trigger'] = 'false'
+            ..fields['custom_phrase'] = candidatePhrase
+            ..files.add(await http.MultipartFile.fromPath('audio', file.path, filename: 'test.wav'));
+
+          final streamed = await request.send().timeout(const Duration(seconds: 12));
+          final res = await http.Response.fromStream(streamed);
+
+          if (res.statusCode == 200) {
+            final data = jsonDecode(res.body) as Map<String, dynamic>;
+            final serverTrans = (data['transcription'] ?? '').toString().trim();
+            if (serverTrans.isNotEmpty) {
+              finalTranscription = serverTrans;
+            }
+            if (data['emergency_detected'] == true) {
+              matched = true;
+              detectedKeyword = data['matched_keyword']?.toString();
+            }
+          }
+        } catch (e) {
+          debugPrint('[VOICE TEST] Backend upload notice: $e');
+        } finally {
+          try { file.deleteSync(); } catch (_) {}
+        }
       }
 
-      final baseUrl = await AppConstants.getEffectiveBackendUrl();
-      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/voice/detect'))
-        ..headers['ngrok-skip-browser-warning'] = 'true'
-        ..fields['auto_trigger'] = 'false'
-        ..fields['custom_phrase'] = candidatePhrase
-        ..files.add(await http.MultipartFile.fromPath('audio', file.path, filename: 'test.wav'));
+      // 6. Check match against candidate phrase and emergency wake phrases
+      if (!matched && finalTranscription.isNotEmpty) {
+        matched = _matchesSinglePhrase(finalTranscription, candidatePhrase) ||
+            _matchesWakePhrase(finalTranscription);
+      }
 
-      final streamed = await request.send().timeout(const Duration(seconds: 15));
-      final res = await http.Response.fromStream(streamed);
-      try { file.deleteSync(); } catch (_) {}
+      isTranscribing.value = false;
+      if (finalTranscription.isNotEmpty) {
+        lastHeardWords.value = finalTranscription;
+      }
 
       if (_isEnabled) unawaited(startListening());
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final transcription = (data['transcription'] ?? '').toString();
-        final matched = data['emergency_detected'] == true ||
-            _matchesSinglePhrase(transcription, candidatePhrase) ||
-            _matchesWakePhrase(transcription);
-        return {
-          'success': true,
-          'transcription': transcription.isNotEmpty ? transcription : 'No speech detected in clip',
-          'matched': matched,
-          'keyword': data['matched_keyword'] ?? candidatePhrase,
-        };
-      } else {
-        return {'success': false, 'error': 'Backend returned status ${res.statusCode}'};
-      }
+      return {
+        'success': true,
+        'transcription': finalTranscription.isNotEmpty
+            ? finalTranscription
+            : 'No clear speech detected. Speak clearly into mic.',
+        'matched': matched,
+        'keyword': detectedKeyword ?? candidatePhrase,
+      };
     } catch (e) {
+      isTranscribing.value = false;
       debugPrint('[VOICE TEST ERROR] $e');
       if (_isEnabled) unawaited(startListening());
       return {'success': false, 'error': e.toString()};
