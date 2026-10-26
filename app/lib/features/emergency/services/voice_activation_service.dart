@@ -499,7 +499,6 @@ class VoiceActivationService {
         } catch (_) {}
 
         await testSpeech.listen(
-          localeId: swLocale,
           onResult: (result) {
             capturedWords = result.recognizedWords;
             onPartialHeard?.call(capturedWords);
@@ -515,6 +514,7 @@ class VoiceActivationService {
             }
           },
           listenOptions: stt.SpeechListenOptions(
+            localeId: swLocale,
             listenMode: stt.ListenMode.dictation,
             partialResults: true,
             cancelOnError: false,

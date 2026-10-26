@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/services/background_protection_service.dart';
 
 import 'core/theme/theme_controller.dart';
-import 'core/constants/app_colors.dart';
 import 'core/config/supabase_config.dart';
 import 'core/di/service_locator.dart';
 import 'core/navigation/navigation_service.dart';
