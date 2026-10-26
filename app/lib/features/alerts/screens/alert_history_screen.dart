@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../controllers/alert_controller.dart';
 import '../../../models/panic_event_model.dart';
 
@@ -46,20 +47,20 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     }).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: context.scaffoldBg,
         elevation: 0.5,
-        title: const Text(
+        title: Text(
           'Incident History & Telemetry',
           style: TextStyle(
-            color: AppColors.textPrimary,
+            color: context.textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 17,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
@@ -98,9 +99,9 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                         Container(
                           padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: context.cardBg,
                             borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: AppColors.border),
+                            border: Border.all(color: context.cardBorder),
                           ),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -108,22 +109,22 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                               Container(
                                 width: 56,
                                 height: 56,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.surface,
+                                decoration: BoxDecoration(
+                                  color: context.surfaceBg,
                                   shape: BoxShape.circle,
                                 ),
-                                child: const Icon(Icons.shield_outlined, size: 30, color: AppColors.textSecondary),
+                                child: Icon(Icons.shield_outlined, size: 30, color: context.textSecondary),
                               ),
                               const SizedBox(height: 14),
                               Text(
                                 _selectedFilter == 'all' ? 'No incidents recorded yet' : 'No $_selectedFilter incidents found',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                               ),
                               const SizedBox(height: 6),
-                              const Text(
+                              Text(
                                 'Emergency dispatches from your wearable or mobile app will appear here with live telemetry.',
                                 textAlign: TextAlign.center,
-                                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                                style: TextStyle(fontSize: 13, color: context.textSecondary),
                               ),
                             ],
                           ),
@@ -151,7 +152,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
@@ -160,7 +161,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
             offset: const Offset(0, 4),
           ),
         ],
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: context.cardBorder),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,16 +169,16 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.analytics_rounded, color: AppColors.primary, size: 20),
-                  SizedBox(width: 8),
+                  const Icon(Icons.analytics_rounded, color: AppColors.primary, size: 20),
+                  const SizedBox(width: 8),
                   Text(
                     'Safety Analytics Overview',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
+                      color: context.textPrimary,
                     ),
                   ),
                 ],
@@ -274,10 +275,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: AppColors.textSecondary,
+              color: context.textSecondary,
             ),
             overflow: TextOverflow.ellipsis,
           ),
@@ -314,10 +315,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? activeColor : Colors.white,
+          color: isSelected ? activeColor : context.cardBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? activeColor : AppColors.border,
+            color: isSelected ? activeColor : context.cardBorder,
             width: isSelected ? 1.5 : 1,
           ),
         ),
@@ -325,7 +326,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 14, color: isSelected ? Colors.white : AppColors.textPrimary),
+              Icon(icon, size: 14, color: isSelected ? Colors.white : context.textPrimary),
               const SizedBox(width: 4),
             ],
             Text(
@@ -333,7 +334,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : AppColors.textPrimary,
+                color: isSelected ? Colors.white : context.textPrimary,
               ),
             ),
           ],
@@ -371,20 +372,20 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.cardBg,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.cardBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.pie_chart_rounded, color: AppColors.primary, size: 18),
-                  SizedBox(width: 8),
+                  const Icon(Icons.pie_chart_rounded, color: AppColors.primary, size: 18),
+                  const SizedBox(width: 8),
                   Text(
                     'Trigger Source Breakdown',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: context.textPrimary),
                   ),
                 ],
               ),
@@ -405,20 +406,20 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         Container(
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.cardBg,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: AppColors.border),
+            border: Border.all(color: context.cardBorder),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
-                  SizedBox(width: 8),
+                  const Icon(Icons.verified_rounded, color: AppColors.success, size: 18),
+                  const SizedBox(width: 8),
                   Text(
                     'Safety Telemetry Reliability',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: context.textPrimary),
                   ),
                 ],
               ),
@@ -455,7 +456,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.textPrimary)),
             Text('$count (${(pct * 100).toStringAsFixed(0)}%)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
           ],
         ),
@@ -480,7 +481,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: context.surfaceBg,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, size: 18, color: AppColors.primary),
@@ -490,9 +491,9 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+              Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: context.textPrimary)),
               const SizedBox(height: 2),
-              Text(desc, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3)),
+              Text(desc, style: TextStyle(fontSize: 12, color: context.textSecondary, height: 1.3)),
             ],
           ),
         ),
@@ -530,10 +531,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.cardBg,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: isActive ? AppColors.sosRed.withValues(alpha: 0.5) : AppColors.border,
+          color: isActive ? AppColors.sosRed.withValues(alpha: 0.5) : context.cardBorder,
           width: isActive ? 1.5 : 1.0,
         ),
         boxShadow: [
@@ -567,7 +568,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                     children: [
                       Text(
                         triggerTitle,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: context.textPrimary),
                       ),
                       const SizedBox(height: 2),
                       Text(dateStr, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
@@ -605,7 +606,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
             ),
           ),
 
-          const Divider(color: AppColors.border, height: 1),
+          Divider(color: context.cardBorder, height: 1),
 
           // Body with Location & Notes
           Padding(
@@ -622,7 +623,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                     Expanded(
                       child: Text(
                         'Coordinates: ${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.textPrimary),
                       ),
                     ),
                   ],
@@ -632,12 +633,12 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: context.surfaceBg,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
                       alert.notes!,
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3),
+                      style: TextStyle(fontSize: 12, color: context.textSecondary, height: 1.3),
                     ),
                   ),
                 ],
@@ -668,9 +669,9 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        side: const BorderSide(color: AppColors.border),
+                        side: BorderSide(color: context.cardBorder),
                       ),
-                      child: const Icon(Icons.map_rounded, size: 16, color: AppColors.textPrimary),
+                      child: Icon(Icons.map_rounded, size: 16, color: context.textPrimary),
                     ),
 
                     if (isActive) ...[

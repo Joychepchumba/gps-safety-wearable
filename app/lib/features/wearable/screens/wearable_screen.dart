@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../../models/wearable_device_model.dart';
 import '../controllers/wearable_controller.dart';
 
@@ -12,28 +13,28 @@ class WearableScreen extends StatelessWidget {
     final controller = context.watch<WearableController>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('Safety Pendant', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
+        title: Text('Safety Pendant', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold)),
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
           child: controller.pairedDevice != null
-              ? _buildPairedView(controller.pairedDevice!, controller)
-              : _buildUnpairedView(controller),
+              ? _buildPairedView(context, controller.pairedDevice!, controller)
+              : _buildUnpairedView(context, controller),
         ),
       ),
     );
   }
 
-  Widget _buildPairedView(WearableDeviceModel device, WearableController controller) {
+  Widget _buildPairedView(BuildContext context, WearableDeviceModel device, WearableController controller) {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       child: Column(
@@ -45,13 +46,13 @@ class WearableScreen extends StatelessWidget {
           Text(
             device.deviceName.isNotEmpty ? device.deviceName : 'SafeGuard Pendant',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
+            style: TextStyle(color: context.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 24),
-          _buildInfoRow('MAC Address', device.deviceMac),
-          _buildInfoRow('Firmware Version', device.firmwareVersion ?? '1.0.0'),
-          _buildInfoRow('Status', device.isActive ? 'Active' : 'Inactive'),
-          _buildInfoRow('Last Seen', 'Active now'),
+          _buildInfoRow(context, 'MAC Address', device.deviceMac),
+          _buildInfoRow(context, 'Firmware Version', device.firmwareVersion ?? '1.0.0'),
+          _buildInfoRow(context, 'Status', device.isActive ? 'Active' : 'Inactive'),
+          _buildInfoRow(context, 'Last Seen', 'Active now'),
           const SizedBox(height: 36),
           OutlinedButton(
             onPressed: () => controller.unpairDevice(),
@@ -68,7 +69,7 @@ class WearableScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildUnpairedView(WearableController controller) {
+  Widget _buildUnpairedView(BuildContext context, WearableController controller) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -92,18 +93,18 @@ class WearableScreen extends StatelessWidget {
                     ),
                   )
                 else
-                  const Icon(Icons.bluetooth_searching, size: 80, color: AppColors.textSecondary),
+                  Icon(Icons.bluetooth_searching, size: 80, color: context.textSecondary),
                 const SizedBox(height: 20),
                 Text(
                   controller.isScanning ? 'Scanning for SafeGuard Pendant...' : 'No Pendant Connected',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
+                  style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 10),
-                const Text(
+                Text(
                   'Make sure your pendant is turned on and in Bluetooth range.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  style: TextStyle(color: context.textSecondary, fontSize: 13),
                 ),
                 const SizedBox(height: 28),
                 if (!controller.isScanning && controller.discoveredDevices.isEmpty)
@@ -120,9 +121,9 @@ class WearableScreen extends StatelessWidget {
                     ),
                   ),
                 if (controller.discoveredDevices.isNotEmpty) ...[
-                  const Text(
+                  Text(
                     'Discovered Devices:',
-                    style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
+                    style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   ListView.builder(
@@ -133,8 +134,8 @@ class WearableScreen extends StatelessWidget {
                       final device = controller.discoveredDevices[index];
                       return ListTile(
                         leading: const Icon(Icons.bluetooth, color: AppColors.accent),
-                        title: Text(device.platformName.isNotEmpty ? device.platformName : 'SafeGuard Device', style: const TextStyle(color: AppColors.textPrimary)),
-                        subtitle: Text(device.remoteId.str, style: const TextStyle(color: AppColors.textSecondary)),
+                        title: Text(device.platformName.isNotEmpty ? device.platformName : 'SafeGuard Device', style: TextStyle(color: context.textPrimary)),
+                        subtitle: Text(device.remoteId.str, style: TextStyle(color: context.textSecondary)),
                         trailing: ElevatedButton(
                           onPressed: () => controller.pairDevice(device),
                           style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
@@ -152,14 +153,14 @@ class WearableScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(String label, String value) {
+  Widget _buildInfoRow(BuildContext context, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
-          Text(value, style: const TextStyle(color: AppColors.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
+          Text(label, style: TextStyle(color: context.textSecondary, fontSize: 14)),
+          Text(value, style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
         ],
       ),
     );

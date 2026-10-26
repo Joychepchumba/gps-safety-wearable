@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../controllers/home_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
@@ -26,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showShakeSettingsModal(BuildContext context, EmergencyController emergencyController) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: context.cardBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -46,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: AppColors.border,
+                          color: context.cardBorder,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -72,10 +73,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Shake Detection Trigger',
                                 style: TextStyle(
-                                  color: AppColors.textPrimary,
+                                  color: context.textPrimary,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -108,26 +109,26 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppColors.inputBg,
+                        color: context.inputBg,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: context.cardBorder),
                       ),
-                      child: const Column(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'How it works:',
                             style: TextStyle(
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 6),
                           Text(
                             'Vigorously shake your phone 2 or more times to immediately start the 10-second emergency SOS countdown, alert responders, and dispatch your GPS coordinates.',
                             style: TextStyle(
-                              color: AppColors.textSecondary,
+                              color: context.textSecondary,
                               fontSize: 12,
                               height: 1.4,
                             ),
@@ -167,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showVoiceSettingsModal(BuildContext context, EmergencyController emergencyController) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: context.cardBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -188,7 +189,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: AppColors.border,
+                          color: context.cardBorder,
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -214,10 +215,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Voice Keyword SOS',
                                 style: TextStyle(
-                                  color: AppColors.textPrimary,
+                                  color: context.textPrimary,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
                                 ),
@@ -252,22 +253,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppColors.inputBg,
+                        color: context.inputBg,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: context.cardBorder),
                       ),
-                      child: const Column(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'Emergency Wake Words:',
                             style: TextStyle(
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 6),
                           Text(
                             'Say any of these phrases out loud to automatically trigger SOS:\n'
                             '• "Help" or "Help me"\n'
@@ -276,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             '• "Tuma Msaada" or "Msaada" (Kiswahili)\n'
                             '• "Piga Polisi" (Kiswahili)',
                             style: TextStyle(
-                              color: AppColors.textSecondary,
+                              color: context.textSecondary,
                               fontSize: 12,
                               height: 1.5,
                             ),
@@ -325,7 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final sosButtonSize = min(180.0, screenWidth * 0.45);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
@@ -340,10 +341,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Good morning,',
                           style: TextStyle(
-                            color: AppColors.textSecondary,
+                            color: context.textSecondary,
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
@@ -351,8 +352,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 2),
                         Text(
                           displayName,
-                          style: const TextStyle(
-                            color: AppColors.textPrimary,
+                          style: TextStyle(
+                            color: context.textPrimary,
                             fontSize: 26,
                             fontWeight: FontWeight.w800,
                           ),
@@ -368,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Stack(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.notifications_none_rounded, size: 28, color: AppColors.textPrimary),
+                            icon: Icon(Icons.notifications_none_rounded, size: 28, color: context.textPrimary),
                             onPressed: () => Navigator.pushNamed(context, '/alerts'),
                           ),
                           Positioned(
@@ -400,9 +401,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Image.asset(
                               'assets/images/user_avatar.jpg',
                               fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) => const CircleAvatar(
-                                backgroundColor: AppColors.inputBg,
-                                child: Icon(Icons.person, color: AppColors.primary),
+                              errorBuilder: (context, error, stackTrace) => CircleAvatar(
+                                backgroundColor: context.inputBg,
+                                child: const Icon(Icons.person, color: AppColors.primary),
                               ),
                             ),
                           ),
@@ -418,14 +419,14 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: context.surfaceBg,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: const [
+                  border: Border.all(color: context.cardBorder),
+                  boxShadow: [
                     BoxShadow(
-                      color: AppColors.cardShadow,
+                      color: context.isDarkMode ? Colors.black.withValues(alpha: 0.3) : AppColors.cardShadow,
                       blurRadius: 12,
-                      offset: Offset(0, 4),
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
@@ -468,10 +469,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(height: 3),
-                          const Text(
+                          Text(
                             'SafeLink Pendant',
                             style: TextStyle(
-                              color: AppColors.textPrimary,
+                              color: context.textPrimary,
                               fontWeight: FontWeight.w800,
                               fontSize: 16,
                             ),
@@ -739,16 +740,16 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.background,
-          border: Border(top: BorderSide(color: AppColors.border, width: 1)),
+        decoration: BoxDecoration(
+          color: context.scaffoldBg,
+          border: Border(top: BorderSide(color: context.cardBorder, width: 1)),
         ),
         child: BottomNavigationBar(
-          backgroundColor: AppColors.background,
+          backgroundColor: context.scaffoldBg,
           elevation: 0,
           currentIndex: 0,
           selectedItemColor: AppColors.primary,
-          unselectedItemColor: AppColors.textSecondary,
+          unselectedItemColor: context.textMuted,
           selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
           unselectedLabelStyle: const TextStyle(fontSize: 11),
           type: BottomNavigationBarType.fixed,
@@ -783,17 +784,17 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: context.surfaceBg,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isHighlighted ? AppColors.success.withValues(alpha: 0.6) : AppColors.border,
+            color: isHighlighted ? AppColors.success.withValues(alpha: 0.6) : context.cardBorder,
             width: isHighlighted ? 1.5 : 1,
           ),
-          boxShadow: const [
+          boxShadow: [
             BoxShadow(
-              color: AppColors.cardShadow,
+              color: context.isDarkMode ? Colors.black.withValues(alpha: 0.2) : AppColors.cardShadow,
               blurRadius: 6,
-              offset: Offset(0, 2),
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -806,8 +807,8 @@ class _HomeScreenState extends State<HomeScreen> {
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: context.textPrimary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
               ),
@@ -819,7 +820,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: isHighlighted ? AppColors.success : AppColors.textMuted,
+                  color: isHighlighted ? AppColors.success : context.textMuted,
                   fontSize: 9,
                   fontWeight: FontWeight.w600,
                 ),
@@ -842,9 +843,9 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: context.surfaceBg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+          border: Border.all(color: context.cardBorder),
         ),
         child: Column(
           children: [
@@ -856,8 +857,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 label,
                 textAlign: TextAlign.center,
                 maxLines: 1,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
+                style: TextStyle(
+                  color: context.textPrimary,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../controllers/emergency_controller.dart';
 
 class EmergencyScreen extends StatefulWidget {
@@ -28,35 +29,35 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     final controller = context.watch<EmergencyController>();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       body: SafeArea(
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 300),
-          child: _buildStateContent(controller),
+          child: _buildStateContent(context, controller),
         ),
       ),
     );
   }
 
-  Widget _buildStateContent(EmergencyController controller) {
+  Widget _buildStateContent(BuildContext context, EmergencyController controller) {
     switch (controller.state) {
       case EmergencyState.countdown:
-        return _buildCountdown(controller);
+        return _buildCountdown(context, controller);
       case EmergencyState.sending:
-        return _buildSending();
+        return _buildSending(context);
       case EmergencyState.sent:
-        return _buildSent(controller);
+        return _buildSent(context, controller);
       case EmergencyState.failed:
-        return _buildFailed(controller);
+        return _buildFailed(context, controller);
       case EmergencyState.cancelled:
-        return _buildCancelled();
+        return _buildCancelled(context);
       case EmergencyState.idle:
       default:
         return const SizedBox();
     }
   }
 
-  Widget _buildCountdown(EmergencyController controller) {
+  Widget _buildCountdown(BuildContext context, EmergencyController controller) {
     final isShake = controller.lastTriggerMethod == TriggerMethod.appShake;
     final isVoice = controller.lastTriggerMethod == TriggerMethod.voiceKeyword;
     final isPendant = controller.lastTriggerMethod == TriggerMethod.pendantTouch;
@@ -147,10 +148,10 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            const Text(
+            Text(
               'SENDING SOS IN',
               style: TextStyle(
-                color: AppColors.textSecondary,
+                color: context.textSecondary,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 2,
@@ -186,8 +187,8 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
             OutlinedButton(
               onPressed: () => controller.cancel(),
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: AppColors.border, width: 2),
+                foregroundColor: context.textPrimary,
+                side: BorderSide(color: context.cardBorder, width: 2),
                 padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
               ),
@@ -202,18 +203,18 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     );
   }
 
-  Widget _buildSending() {
-    return const Center(
+  Widget _buildSending(BuildContext context) {
+    return Center(
       child: SingleChildScrollView(
-        padding: EdgeInsets.all(24),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(color: AppColors.primary),
-            SizedBox(height: 24),
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 24),
             Text(
               AppStrings.sendingAlert,
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -221,7 +222,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     );
   }
 
-  Widget _buildSent(EmergencyController controller) {
+  Widget _buildSent(BuildContext context, EmergencyController controller) {
     return Center(
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -231,16 +232,16 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
           children: [
             const Icon(Icons.check_circle, color: AppColors.success, size: 84),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               AppStrings.emergencyAlertSent,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
+              style: TextStyle(color: context.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Emergency contacts and nearby community responders have been alerted with your real-time GPS coordinates.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.4),
+              style: TextStyle(color: context.textSecondary, fontSize: 14, height: 1.4),
             ),
             const SizedBox(height: 36),
             ElevatedButton(
@@ -263,7 +264,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     );
   }
 
-  Widget _buildFailed(EmergencyController controller) {
+  Widget _buildFailed(BuildContext context, EmergencyController controller) {
     return Center(
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -273,9 +274,9 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
           children: [
             const Icon(Icons.error_outline, color: AppColors.error, size: 80),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Failed to send alert',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(color: context.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 36),
             ElevatedButton(
@@ -293,18 +294,18 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
     );
   }
 
-  Widget _buildCancelled() {
+  Widget _buildCancelled(BuildContext context) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.cancel_outlined, color: AppColors.textSecondary, size: 70),
-            SizedBox(height: 16),
+          children: [
+            Icon(Icons.cancel_outlined, color: context.textSecondary, size: 70),
+            const SizedBox(height: 16),
             Text(
               'Alert Cancelled',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 20, fontWeight: FontWeight.bold),
+              style: TextStyle(color: context.textSecondary, fontSize: 20, fontWeight: FontWeight.bold),
             ),
           ],
         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../../models/emergency_contact_model.dart';
 import '../controllers/contacts_controller.dart';
 
@@ -32,9 +33,9 @@ class ContactsScreen extends StatelessWidget {
         return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            decoration: BoxDecoration(
+              color: ctx.cardBg,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             ),
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
             child: Form(
@@ -48,7 +49,7 @@ class ContactsScreen extends StatelessWidget {
                       width: 44,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey[300],
+                        color: ctx.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -71,48 +72,49 @@ class ContactsScreen extends StatelessWidget {
                       const SizedBox(width: 12),
                       Text(
                         isEditing ? 'Edit Emergency Contact' : 'Add Emergency Contact',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                          color: ctx.textPrimary,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  const Text(
+                  Text(
                     'This contact will receive instant SMS alerts and live 3D Mapbox tracking links during SOS.',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.3),
+                    style: TextStyle(fontSize: 13, color: ctx.textSecondary, height: 1.3),
                   ),
                   const SizedBox(height: 20),
 
                   // Name
-                  const Text('Contact Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text('Contact Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: nameController,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, color: ctx.textPrimary),
                     validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a name' : null,
                     decoration: InputDecoration(
                       hintText: 'e.g. Mom, Joy (Primary), Dad',
-                      prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textSecondary, size: 20),
+                      hintStyle: TextStyle(color: ctx.textMuted),
+                      prefixIcon: Icon(Icons.person_outline_rounded, color: ctx.textSecondary, size: 20),
                       filled: true,
-                      fillColor: AppColors.surface,
+                      fillColor: ctx.inputBg,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
                     ),
                   ),
                   const SizedBox(height: 14),
 
                   // Phone
-                  const Text('Phone Number', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text('Phone Number', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: phoneController,
                     keyboardType: TextInputType.phone,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
+                    style: TextStyle(fontSize: 15, color: ctx.textPrimary),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) return 'Please enter a phone number';
                       if (v.trim().length < 8) return 'Enter a valid phone number';
@@ -120,19 +122,20 @@ class ContactsScreen extends StatelessWidget {
                     },
                     decoration: InputDecoration(
                       hintText: '+254 700 000 000',
-                      prefixIcon: const Icon(Icons.phone_outlined, color: AppColors.textSecondary, size: 20),
+                      hintStyle: TextStyle(color: ctx.textMuted),
+                      prefixIcon: Icon(Icons.phone_outlined, color: ctx.textSecondary, size: 20),
                       filled: true,
-                      fillColor: AppColors.surface,
+                      fillColor: ctx.inputBg,
                       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
                       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
                     ),
                   ),
                   const SizedBox(height: 14),
 
                   // Email
-                  const Text('Email Address (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                  Text('Email Address (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
                   const SizedBox(height: 6),
                   TextFormField(
                     controller: emailController,
@@ -266,20 +269,20 @@ class ContactsScreen extends StatelessWidget {
     final count = controller.contacts.length;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: context.scaffoldBg,
         elevation: 0.5,
-        title: const Text(
+        title: Text(
           'Emergency Contacts',
           style: TextStyle(
-            color: AppColors.textPrimary,
+            color: context.textPrimary,
             fontWeight: FontWeight.w800,
             fontSize: 17,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -378,31 +381,31 @@ class ContactsScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 20),
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: context.cardBg,
                         borderRadius: BorderRadius.circular(18),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: context.cardBorder),
                       ),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Container(
                             padding: const EdgeInsets.all(16),
-                            decoration: const BoxDecoration(
-                              color: AppColors.surface,
+                            decoration: BoxDecoration(
+                              color: context.surfaceBg,
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.contact_phone_outlined, size: 36, color: AppColors.textSecondary),
+                            child: Icon(Icons.contact_phone_outlined, size: 36, color: context.textSecondary),
                           ),
                           const SizedBox(height: 16),
-                          const Text(
+                          Text(
                             'No Emergency Contacts Yet',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: context.textPrimary),
                           ),
                           const SizedBox(height: 6),
-                          const Text(
+                          Text(
                             'Add up to 3 trusted contacts who should receive your live coordinates and distress alerts.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                            style: TextStyle(fontSize: 13, color: context.textSecondary),
                           ),
                           const SizedBox(height: 20),
                           ElevatedButton.icon(
@@ -428,15 +431,15 @@ class ContactsScreen extends StatelessWidget {
                         margin: const EdgeInsets.only(bottom: 14),
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: context.cardBg,
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                            color: isPrimary ? AppColors.primary.withValues(alpha: 0.3) : AppColors.border,
+                            color: isPrimary ? AppColors.primary.withValues(alpha: 0.3) : context.cardBorder,
                             width: isPrimary ? 1.5 : 1.0,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.03),
+                              color: context.isDarkMode ? Colors.black.withValues(alpha: 0.2) : Colors.black.withValues(alpha: 0.03),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -488,10 +491,10 @@ class ContactsScreen extends StatelessWidget {
                                           Flexible(
                                             child: Text(
                                               contact.contactName,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 15,
                                                 fontWeight: FontWeight.w800,
-                                                color: AppColors.textPrimary,
+                                                color: context.textPrimary,
                                               ),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -519,9 +522,9 @@ class ContactsScreen extends StatelessWidget {
                                       const SizedBox(height: 3),
                                       Text(
                                         contact.phoneNumber,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13,
-                                          color: AppColors.textSecondary,
+                                          color: context.textSecondary,
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),

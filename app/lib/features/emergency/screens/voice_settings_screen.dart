@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/theme/theme_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
 import '../../emergency/services/voice_activation_service.dart';
 import '../../../core/di/service_locator.dart';
@@ -137,11 +138,15 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        title: const Text('Voice SOS Configuration'),
+        title: Text('Voice SOS Configuration', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -171,14 +176,14 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Multilingual Speech AI',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           'Powered by on-device and backend multilingual Whisper model (English & Kiswahili).',
-                          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 12, color: context.textSecondary),
                         ),
                       ],
                     ),
@@ -190,16 +195,17 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
 
             // Enable Toggle Switch
             Card(
+              color: context.cardBg,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: SwitchListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                title: const Text(
+                title: Text(
                   'Continuous Voice Detection',
-                  style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary),
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Listens for your trigger phrase even in background or locked screen',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                  style: TextStyle(fontSize: 12, color: context.textSecondary),
                 ),
                 value: _isListeningEnabled,
                 activeTrackColor: AppColors.primary,
@@ -211,9 +217,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             const SizedBox(height: 20),
 
             // Select Phrase Section
-            const Text(
+            Text(
               'Select or Customize Your Emergency Phrase',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: context.textPrimary),
             ),
             const SizedBox(height: 12),
 
@@ -228,15 +234,16 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                   label: Text(item['label']!),
                   selected: isSelected,
                   selectedColor: AppColors.primary.withValues(alpha: 0.2),
+                  backgroundColor: context.surfaceBg,
                   labelStyle: TextStyle(
-                    color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                    color: isSelected ? AppColors.primary : context.textPrimary,
                     fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     fontSize: 13,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(20),
                     side: BorderSide(
-                      color: isSelected ? AppColors.primary : AppColors.border,
+                      color: isSelected ? AppColors.primary : context.cardBorder,
                     ),
                   ),
                   onSelected: (selected) {
@@ -255,17 +262,22 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             // Custom Phrase Input Field
             TextField(
               controller: _customPhraseController,
+              style: TextStyle(color: context.textPrimary),
               decoration: InputDecoration(
                 labelText: 'Custom Emergency Phrase',
+                labelStyle: TextStyle(color: context.textSecondary),
                 hintText: 'e.g. tuma msaada haraka, save me now',
+                hintStyle: TextStyle(color: context.textMuted),
                 prefixIcon: const Icon(Icons.record_voice_over_rounded, color: AppColors.primary),
                 suffixIcon: IconButton(
-                  icon: const Icon(Icons.clear_rounded),
+                  icon: Icon(Icons.clear_rounded, color: context.textSecondary),
                   onPressed: () => _customPhraseController.clear(),
                 ),
                 filled: true,
-                fillColor: AppColors.surface,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                fillColor: context.surfaceBg,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
               ),
               onChanged: (val) {
                 setState(() => _selectedPhrase = val);
@@ -277,9 +289,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: context.surfaceBg,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: context.cardBorder),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -288,9 +300,9 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                     children: [
                       const Icon(Icons.hearing_rounded, color: AppColors.primary, size: 22),
                       const SizedBox(width: 8),
-                      const Text(
+                      Text(
                         'Test With Your Voice',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: AppColors.textPrimary),
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
                       ),
                     ],
                   ),
@@ -384,19 +396,19 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                         margin: const EdgeInsets.only(top: 12),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: AppColors.background,
+                          color: context.inputBg,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
                             color: words.isNotEmpty
                                 ? AppColors.success.withValues(alpha: 0.6)
-                                : AppColors.border,
+                                : context.cardBorder,
                           ),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               words.isNotEmpty ? Icons.record_voice_over_rounded : Icons.mic_none_rounded,
-                              color: words.isNotEmpty ? AppColors.success : AppColors.textSecondary,
+                              color: words.isNotEmpty ? AppColors.success : context.textSecondary,
                               size: 20,
                             ),
                             const SizedBox(width: 10),
@@ -409,7 +421,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                                     style: TextStyle(
                                       fontSize: 10,
                                       fontWeight: FontWeight.bold,
-                                      color: words.isNotEmpty ? AppColors.success : AppColors.textSecondary,
+                                      color: words.isNotEmpty ? AppColors.success : context.textSecondary,
                                     ),
                                   ),
                                   const SizedBox(height: 2),
@@ -418,7 +430,7 @@ class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
                                     style: TextStyle(
                                       fontSize: 13,
                                       fontStyle: words.isNotEmpty ? FontStyle.italic : FontStyle.normal,
-                                      color: words.isNotEmpty ? AppColors.textPrimary : AppColors.textSecondary,
+                                      color: words.isNotEmpty ? context.textPrimary : context.textSecondary,
                                       fontWeight: words.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
                                     ),
                                   ),

@@ -91,20 +91,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: ctx.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
+        title: Text(
           'Log Out',
-          style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+          style: TextStyle(fontWeight: FontWeight.w800, color: ctx.textPrimary),
         ),
-        content: const Text(
+        content: Text(
           'Are you sure you want to log out of SafeLink? In an emergency, staying signed in ensures instant SOS triggering.',
-          style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.4),
+          style: TextStyle(color: ctx.textSecondary, fontSize: 14, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600)),
+            child: Text('Cancel', style: TextStyle(color: ctx.textSecondary, fontWeight: FontWeight.w600)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -131,18 +131,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _syncUserToControllers(user);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: context.scaffoldBg,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: AppColors.textPrimary, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
+        title: Text(
           'My Profile',
           style: TextStyle(
-            color: AppColors.textPrimary,
+            color: context.textPrimary,
             fontSize: 18,
             fontWeight: FontWeight.w800,
           ),
@@ -167,9 +167,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _duressPinController.clear();
                 });
               },
-              child: const Text(
+              child: Text(
                 'Cancel',
-                style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+                style: TextStyle(color: context.textSecondary, fontWeight: FontWeight.w600),
               ),
             ),
         ],
@@ -185,14 +185,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: context.surfaceBg,
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: const [
+                  border: Border.all(color: context.cardBorder),
+                  boxShadow: [
                     BoxShadow(
-                      color: AppColors.cardShadow,
+                      color: context.isDarkMode ? Colors.black.withValues(alpha: 0.3) : AppColors.cardShadow,
                       blurRadius: 10,
-                      offset: Offset(0, 4),
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
@@ -207,7 +207,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             avatarId: user?.avatarUrl,
                             fallbackName: user?.fullName,
                             size: 88,
-                            border: Border.all(color: Colors.white, width: 3),
+                            border: Border.all(color: context.scaffoldBg, width: 3),
                           ),
                           Container(
                             padding: const EdgeInsets.all(6),
@@ -223,9 +223,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 6),
                     GestureDetector(
                       onTap: () => _showAvatarPickerSheet(context, authController, user),
-                      child: Text(
-                        'Change Avatar (${AvatarPresets.getById(user?.avatarUrl).name})',
-                        style: const TextStyle(
+                      child: const Text(
+                        'Change Avatar',
+                        style: TextStyle(
                           fontSize: 12,
                           color: AppColors.primary,
                           fontWeight: FontWeight.w700,
@@ -236,19 +236,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Text(
                       user?.fullName.isNotEmpty == true ? user!.fullName : 'SafeLink User',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
+                        color: context.textPrimary,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       user?.email.isNotEmpty == true ? user!.email : 'No email provided',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
-                        color: AppColors.textSecondary,
+                        color: context.textSecondary,
                       ),
                     ),
                     if (user?.phoneNumber.isNotEmpty == true) ...[
@@ -256,9 +256,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Text(
                         user!.phoneNumber,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.textMuted,
+                          color: context.textMuted,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -272,7 +272,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           decoration: BoxDecoration(
                             color: (user?.isCommunityResponder ?? false)
                                 ? AppColors.primary.withValues(alpha: 0.1)
-                                : AppColors.inputBg,
+                                : context.inputBg,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Row(
@@ -285,7 +285,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 size: 14,
                                 color: (user?.isCommunityResponder ?? false)
                                     ? AppColors.primary
-                                    : AppColors.textSecondary,
+                                    : context.textSecondary,
                               ),
                               const SizedBox(width: 6),
                               Text(
@@ -297,7 +297,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   fontWeight: FontWeight.w800,
                                   color: (user?.isCommunityResponder ?? false)
                                       ? AppColors.primary
-                                      : AppColors.textSecondary,
+                                      : context.textSecondary,
                                   letterSpacing: 0.5,
                                 ),
                               ),
@@ -341,14 +341,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Container(
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: context.cardBg,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-                    boxShadow: const [
+                    boxShadow: [
                       BoxShadow(
-                        color: AppColors.cardShadow,
+                        color: context.isDarkMode ? Colors.black.withValues(alpha: 0.3) : AppColors.cardShadow,
                         blurRadius: 12,
-                        offset: Offset(0, 4),
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
@@ -357,16 +357,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Row(
+                        Row(
                           children: [
-                            Icon(Icons.edit_note_rounded, color: AppColors.primary),
-                            SizedBox(width: 8),
+                            const Icon(Icons.edit_note_rounded, color: AppColors.primary),
+                            const SizedBox(width: 8),
                             Text(
                               'Edit Profile Information',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                                color: context.textPrimary,
                               ),
                             ),
                           ],
@@ -374,47 +374,49 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         const SizedBox(height: 16),
 
                         // Full Name
-                        const Text(
+                        Text(
                           'Full Name',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _nameController,
-                          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 14, color: context.textPrimary),
                           validator: (val) => (val == null || val.trim().isEmpty) ? 'Name is required' : null,
                           decoration: InputDecoration(
                             hintText: 'Your Full Name',
-                            prefixIcon: const Icon(Icons.person_outline, size: 20, color: AppColors.textSecondary),
+                            hintStyle: TextStyle(color: context.textMuted),
+                            prefixIcon: Icon(Icons.person_outline, size: 20, color: context.textSecondary),
                             filled: true,
-                            fillColor: AppColors.surface,
+                            fillColor: context.inputBg,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
                             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
                           ),
                         ),
                         const SizedBox(height: 14),
 
                         // Phone Number
-                        const Text(
+                        Text(
                           'Phone Number',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _phoneController,
                           keyboardType: TextInputType.phone,
-                          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 14, color: context.textPrimary),
                           validator: (val) => (val == null || val.trim().isEmpty) ? 'Phone number is required' : null,
                           decoration: InputDecoration(
                             hintText: '+254 700 000 000',
-                            prefixIcon: const Icon(Icons.phone_outlined, size: 20, color: AppColors.textSecondary),
+                            hintStyle: TextStyle(color: context.textMuted),
+                            prefixIcon: Icon(Icons.phone_outlined, size: 20, color: context.textSecondary),
                             filled: true,
-                            fillColor: AppColors.surface,
+                            fillColor: context.inputBg,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
                             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
                           ),
                         ),
@@ -424,24 +426,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppColors.surface,
+                            color: context.inputBg,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
+                            border: Border.all(color: context.cardBorder),
                           ),
                           child: Row(
                             children: [
-                              const Expanded(
+                              Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
                                       'Community Responder',
-                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: context.textPrimary),
                                     ),
-                                    SizedBox(height: 2),
+                                    const SizedBox(height: 2),
                                     Text(
                                       'Receive notifications if someone nearby triggers an emergency alert.',
-                                      style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                      style: TextStyle(fontSize: 12, color: context.textSecondary),
                                     ),
                                   ],
                                 ),
@@ -452,37 +454,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 activeThumbColor: Colors.white,
                                 onChanged: (val) => setState(() => _isCommunityResponder = val),
                               ),
-
-
                             ],
                           ),
                         ),
                         const SizedBox(height: 14),
 
                         // Secret Duress Password
-                        const Text(
+                        Text(
                           'Update Secret Duress PIN (Optional)',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: context.textPrimary),
                         ),
                         const SizedBox(height: 4),
-                        const Text(
+                        Text(
                           'Used to trigger a silent covert SOS alarm if forced under threat.',
-                          style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                          style: TextStyle(fontSize: 11, color: context.textSecondary),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _duressPinController,
                           obscureText: true,
                           keyboardType: TextInputType.text,
-                          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+                          style: TextStyle(fontSize: 14, color: context.textPrimary),
                           decoration: InputDecoration(
                             hintText: 'Leave blank to keep existing',
+                            hintStyle: TextStyle(color: context.textMuted),
                             prefixIcon: const Icon(Icons.shield_outlined, size: 20, color: AppColors.warning),
                             filled: true,
-                            fillColor: AppColors.surface,
+                            fillColor: context.inputBg,
                             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
+                            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
                             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
                           ),
                         ),
@@ -530,9 +531,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: context.surfaceBg,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: context.cardBorder),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -548,7 +549,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: const Icon(Icons.palette_outlined, color: AppColors.primary, size: 20),
                         ),
                         const SizedBox(width: 12),
-                        const Expanded(
+                        Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -557,15 +558,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
+                                  color: context.textPrimary,
                                 ),
                               ),
-                              SizedBox(height: 2),
+                              const SizedBox(height: 2),
                               Text(
                                 'Select light, dark, or follow system appearance',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                  color: context.textSecondary,
                                 ),
                               ),
                             ],
@@ -719,10 +720,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.primary.withValues(alpha: 0.12) : AppColors.inputBg,
+            color: isSelected ? AppColors.primary.withValues(alpha: 0.15) : context.inputBg,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: isSelected ? AppColors.primary : AppColors.border,
+              color: isSelected ? AppColors.primary : context.cardBorder,
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -732,7 +733,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               Icon(
                 icon,
                 size: 20,
-                color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                color: isSelected ? AppColors.primary : context.textSecondary,
               ),
               const SizedBox(height: 4),
               Text(
@@ -740,7 +741,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                  color: isSelected ? AppColors.primary : AppColors.textSecondary,
+                  color: isSelected ? AppColors.primary : context.textSecondary,
                 ),
               ),
             ],
@@ -757,9 +758,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       isScrollControlled: true,
       builder: (ctx) {
         return Container(
-          decoration: const BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          decoration: BoxDecoration(
+            color: ctx.cardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
           child: Column(
@@ -770,25 +771,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: ctx.cardBorder,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
               const SizedBox(height: 18),
-              const Text(
+              Text(
                 'Choose Your Safety Avatar',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+                  color: ctx.textPrimary,
                 ),
               ),
               const SizedBox(height: 6),
-              const Text(
+              Text(
                 'Your avatar represents your profile across SafeLink and Community Responders',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                style: TextStyle(fontSize: 13, color: ctx.textSecondary),
               ),
               const SizedBox(height: 20),
               Wrap(
@@ -830,7 +831,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               end: Alignment.bottomRight,
                             ),
                             border: Border.all(
-                              color: isSelected ? AppColors.primary : Colors.white,
+                              color: isSelected ? AppColors.primary : ctx.cardBorder,
                               width: isSelected ? 3.5 : 2,
                             ),
                             boxShadow: [
@@ -854,7 +855,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? AppColors.primary : AppColors.textPrimary,
+                            color: isSelected ? AppColors.primary : ctx.textPrimary,
                           ),
                         ),
                       ],
@@ -883,16 +884,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: context.surfaceBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
+          border: Border.all(color: context.cardBorder),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: iconColor.withValues(alpha: 0.1),
+                color: iconColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: iconColor, size: 22),
@@ -904,18 +905,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                      color: context.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.textSecondary,
+                      color: context.textSecondary,
                     ),
                   ),
                 ],
@@ -956,9 +957,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           builder: (context, setSheetState) {
             final isSaver = controller.isBatterySaverEnabled;
             return Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              decoration: BoxDecoration(
+                color: ctx.cardBg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
               child: Column(
@@ -970,7 +971,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
+                        color: ctx.cardBorder,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -995,12 +996,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Battery & Power Management',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                                color: ctx.textPrimary,
                               ),
                             ),
                             Text(
@@ -1008,7 +1009,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: isSaver ? Colors.orange.shade900 : Colors.teal.shade800,
+                                color: isSaver ? Colors.orange.shade400 : Colors.teal.shade400,
                               ),
                             ),
                           ],
@@ -1022,10 +1023,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: isSaver ? Colors.orange.shade50 : AppColors.surface,
+                      color: isSaver
+                          ? Colors.orange.withValues(alpha: 0.12)
+                          : ctx.surfaceBg,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: isSaver ? Colors.orange.shade300 : AppColors.border,
+                        color: isSaver ? Colors.orange.shade300 : ctx.cardBorder,
                       ),
                     ),
                     child: Row(
@@ -1034,12 +1037,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
+                              Text(
                                 'Extreme Battery Saver Mode',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.textPrimary,
+                                  color: ctx.textPrimary,
                                 ),
                               ),
                               const SizedBox(height: 4),
@@ -1047,9 +1050,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 isSaver
                                     ? 'Continuous microphone listening paused. Emergency Shake and SOS Button remain 100% armed.'
                                     : 'Preserve battery on low-charge days by pausing continuous microphone sampling while keeping shake SOS armed.',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 12,
-                                  color: AppColors.textSecondary,
+                                  color: ctx.textSecondary,
                                   height: 1.3,
                                 ),
                               ),
@@ -1070,13 +1073,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
 
                   const SizedBox(height: 18),
-                  const Text(
+                  Text(
                     'ACTIVE POWER OPTIMIZATIONS',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.8,
-                      color: AppColors.textMuted,
+                      color: ctx.textMuted,
                     ),
                   ),
                   const SizedBox(height: 10),
@@ -1140,10 +1143,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: Colors.teal.shade50,
+              color: Colors.teal.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: Colors.teal.shade700, size: 16),
+            child: Icon(icon, color: Colors.teal.shade400, size: 16),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -1152,17 +1155,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    color: context.textPrimary,
                   ),
                 ),
                 Text(
                   detail,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AppColors.textSecondary,
+                    color: context.textSecondary,
                     height: 1.3,
                   ),
                 ),
