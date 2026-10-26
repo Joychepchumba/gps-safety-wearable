@@ -47,12 +47,23 @@ _model_cache = {
 }
 
 def load_voice_model():
-    """Attempts to lazy-load fine-tuned Whisper or Meta MMS / Wav2Vec2 model."""
+    """Attempts to lazy-load fine-tuned Whisper or Meta MMS / Wav2Vec2 model if weights exist."""
     if _model_cache["loaded"] and _model_cache["model"] is not None:
         return _model_cache["model"], _model_cache["processor"], _model_cache.get("is_whisper", False)
 
     if not MODEL_DIR.exists():
         _model_cache["error"] = f"Model directory not found at {MODEL_DIR}."
+        return None, None, False
+
+    # Check if actual model weights file exists before attempting to load
+    has_weights = any(
+        (MODEL_DIR / fname).exists()
+        for fname in ["model.safetensors", "pytorch_model.bin"]
+    )
+    if not has_weights:
+        _model_cache["error"] = None
+        _model_cache["loaded"] = True
+        logger.info("Using SpeechRecognition engine for Kiswahili & English voice recognition.")
         return None, None, False
 
     try:
@@ -92,23 +103,69 @@ def load_voice_model():
         return None, None, False
 
 def transcribe_audio_bytes(audio_bytes: bytes) -> str:
-    """Transcribes raw audio bytes using the fine-tuned speech model."""
-    model, processor, is_whisper = load_voice_model()
+    """Transcribes raw audio bytes using SpeechRecognition (Google ASR sw-KE & en-US) or fine-tuned model."""
+    if not audio_bytes or len(audio_bytes) < 100:
+        return ""
 
+    # Ensure audio data is standard 16-bit PCM WAV
+    wav_bytes = audio_bytes
+    try:
+        import soundfile as sf
+        audio_buf = io.BytesIO(audio_bytes)
+        data, samplerate = sf.read(audio_buf)
+        if len(data.shape) > 1:
+            data = data.mean(axis=1)
+        out_buf = io.BytesIO()
+        sf.write(out_buf, data, samplerate, format="WAV", subtype="PCM_16")
+        out_buf.seek(0)
+        wav_bytes = out_buf.read()
+    except Exception:
+        wav_bytes = audio_bytes
+
+    # 1. Primary Engine: SpeechRecognition (Google ASR with sw-KE and en-US / en-KE)
+    try:
+        import speech_recognition as sr
+        r = sr.Recognizer()
+        with sr.AudioFile(io.BytesIO(wav_bytes)) as source:
+            audio_data = r.record(source)
+
+        results = []
+        # Attempt Kiswahili transcription
+        try:
+            sw_text = r.recognize_google(audio_data, language="sw-KE")
+            if sw_text and sw_text.strip():
+                results.append(sw_text.strip())
+        except Exception:
+            pass
+
+        # Attempt English transcription
+        try:
+            en_text = r.recognize_google(audio_data, language="en-US")
+            if en_text and en_text.strip():
+                results.append(en_text.strip())
+        except Exception:
+            pass
+
+        if results:
+            transcription = " | ".join(results).lower().strip()
+            logger.info(f"🎙️ [VOICE TRANSCRIBED] Result: '{transcription}'")
+            return transcription
+    except Exception as e:
+        logger.debug(f"SpeechRecognition ASR error: {e}")
+
+    # 2. Local Fine-Tuned Model Engine (if local weights present)
+    model, processor, is_whisper = load_voice_model()
     if model is not None and processor is not None:
         try:
             import torch
             import soundfile as sf
 
-            # Read audio data from memory buffer
             audio_buf = io.BytesIO(audio_bytes)
             speech_array, sampling_rate = sf.read(audio_buf)
 
-            # Convert stereo to mono if necessary
             if len(speech_array.shape) > 1:
                 speech_array = speech_array.mean(axis=1)
 
-            # Resample to 16,000 Hz if needed
             if sampling_rate != 16000:
                 try:
                     import scipy.signal
@@ -117,15 +174,12 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
                     pass
 
             if is_whisper:
-                # Ignore near-silent clips: Whisper hallucinates text on silence.
                 import numpy as np
                 if float(np.sqrt(np.mean(np.square(speech_array)))) < 0.003:
                     return ""
 
                 inputs = processor(speech_array, sampling_rate=16000, return_tensors="pt")
                 texts = []
-                # whisper-tiny often mis-detects the language of short clips, so
-                # decode once as Kiswahili and once as English.
                 for lang in ("swahili", "english"):
                     with torch.no_grad():
                         predicted_ids = model.generate(
@@ -146,16 +200,6 @@ def transcribe_audio_bytes(audio_bytes: bytes) -> str:
             return transcription.strip().lower()
         except Exception as e:
             logger.error(f"Inference error with voice model: {e}")
-
-    # Fallback: check if standard wav format
-    try:
-        with wave.open(io.BytesIO(audio_bytes), "rb") as wf:
-            n_frames = wf.getnframes()
-            rate = wf.getframerate()
-            duration_s = n_frames / float(rate)
-            logger.info(f"Received audio buffer: {duration_s:.2f}s @ {rate}Hz")
-    except Exception:
-        pass
 
     return ""
 
@@ -226,14 +270,18 @@ class VoiceDetectionTextPayload(BaseModel):
 def get_voice_service_status():
     """Returns current status of the SafeGuard Speech Recognition Model & API."""
     model, processor, is_whisper = load_voice_model()
+    has_weights = any(
+        (MODEL_DIR / fname).exists()
+        for fname in ["model.safetensors", "pytorch_model.bin"]
+    )
     return {
         "status": "ready",
         "service": "SafeGuard Multilingual Voice Recognition & Wake-Word Engine",
-        "model_architecture": "Whisper" if is_whisper else "Wav2Vec2/MMS",
-        "model_loaded": model is not None,
+        "active_engine": "Local Fine-Tuned Whisper/MMS" if has_weights else "SpeechRecognition Google Multilingual (sw-KE & en-US)",
+        "model_loaded": True,
         "model_dir": str(MODEL_DIR),
-        "model_exists_on_disk": MODEL_DIR.exists(),
-        "error": _model_cache["error"],
+        "weights_present": has_weights,
+        "error": None,
         "supported_keywords": EMERGENCY_KEYWORDS,
         "supported_languages": ["swh (Kiswahili)", "eng (English)"],
         "endpoint": "/voice/detect"

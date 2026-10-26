@@ -29,8 +29,8 @@ class VoiceActivationService {
   // --- tuning ---------------------------------------------------------------
   static const Duration _chunkDuration = Duration(seconds: 4);
   static const Duration _ampPollInterval = Duration(milliseconds: 250);
-  // Sensitive speech threshold (-50 dB ensures normal speaking voice is caught)
-  static const double _speechThresholdDb = -50.0;
+  // Sensitive speech threshold (-65 dB ensures whisper and normal speaking voice is caught)
+  static const double _speechThresholdDb = -65.0;
   static const Duration _triggerCooldown = Duration(seconds: 20);
 
   final AudioRecorder _recorder = AudioRecorder();
@@ -40,7 +40,6 @@ class VoiceActivationService {
   bool _wantListening = false;
   bool _isSpeechListening = false;
   bool _usingSecondaryEngine = false;
-  int _sttBusyErrorCount = 0;
   bool _isEnabled = true;
   String _wakePhrase = 'tuma msaada';
 
@@ -120,7 +119,6 @@ class VoiceActivationService {
     if (!await _ensureMicPermission()) return;
     _wantListening = true;
     _usingSecondaryEngine = false;
-    _sttBusyErrorCount = 0;
     debugPrint('[VOICE] Starting voice safety detection...');
 
     // Try primary on-device native speech recognizer first
@@ -152,8 +150,6 @@ class VoiceActivationService {
     _isSpeechListening = false;
   }
 
-  int _consecutiveNoMatchCount = 0;
-
   // --------------------------------------------------------------------------
   // PRIMARY ENGINE: Native Continuous Speech Recognition
   // --------------------------------------------------------------------------
@@ -171,24 +167,10 @@ class VoiceActivationService {
           }
 
           if (msg == 'error_busy') {
-            _sttBusyErrorCount++;
-            if (_sttBusyErrorCount >= 3) {
-              debugPrint('[VOICE STT] Mic busy repeatedly ($msg). Switching seamlessly to Whisper background engine...');
-              _switchToSecondaryEngine();
-              return;
-            }
-            _restartSttSoon(delay: const Duration(milliseconds: 2000));
-          } else if (msg == 'error_speech_timeout') {
-            // Ambient timeout, smoothly restart
-            _restartSttSoon(delay: const Duration(milliseconds: 1000));
-          } else if (msg == 'error_no_match') {
-            _consecutiveNoMatchCount++;
-            if (_consecutiveNoMatchCount >= 5) {
-              debugPrint('[VOICE STT] Repeated empty matches ($msg) on this device. Switching seamlessly to Whisper audio chunking engine...');
-              _switchToSecondaryEngine();
-              return;
-            }
-            // Do not call _restartSttSoon here; let onStatus('done') restart cleanly
+            _restartSttSoon(delay: const Duration(milliseconds: 2500));
+          } else if (msg == 'error_speech_timeout' || msg == 'error_no_match') {
+            // Ambient silence or phrase timeout: smoothly restart listening
+            _restartSttSoon(delay: const Duration(milliseconds: 800));
           } else {
             _restartSttSoon(delay: const Duration(milliseconds: 1500));
           }
@@ -196,12 +178,10 @@ class VoiceActivationService {
         onStatus: (status) {
           if (status == 'listening') {
             _isSpeechListening = true;
-          } else if (status == 'done') {
+          } else if (status == 'done' || status == 'notListening') {
             _isSpeechListening = false;
-            // Only restart when done, ensuring recognizer lifecycle has closed
-            _restartSttSoon(delay: const Duration(milliseconds: 1000));
-          } else if (status == 'notListening') {
-            _isSpeechListening = false;
+            // Recognizer closed lifecycle, restart listening loop
+            _restartSttSoon(delay: const Duration(milliseconds: 800));
           }
         },
       );
@@ -212,15 +192,7 @@ class VoiceActivationService {
     return _speechReady;
   }
 
-  void _switchToSecondaryEngine() {
-    _usingSecondaryEngine = true;
-    _sttKeepAliveTimer?.cancel();
-    _sttKeepAliveTimer = null;
-    _stopSpeechEngine();
-    unawaited(_runChunkRecordingLoop());
-  }
-
-  void _restartSttSoon({Duration delay = const Duration(milliseconds: 1000)}) {
+  void _restartSttSoon({Duration delay = const Duration(milliseconds: 800)}) {
     if (!_wantListening || _usingSecondaryEngine) return;
     _sttKeepAliveTimer?.cancel();
     _sttKeepAliveTimer = Timer(delay, () {
@@ -238,19 +210,38 @@ class VoiceActivationService {
         _isSpeechListening = true;
         return;
       }
+
+      // Check if configured wake phrase prefers Kiswahili locale
+      final isSwahili = _wakePhrase.contains('msaada') ||
+          _wakePhrase.contains('tuma') ||
+          _wakePhrase.contains('nisaidie') ||
+          _wakePhrase.contains('polisi') ||
+          _wakePhrase.contains('okoa');
+      String? targetLocale;
+      if (isSwahili) {
+        try {
+          final locales = await _speech.locales();
+          for (final loc in locales) {
+            if (loc.localeId.toLowerCase().startsWith('sw')) {
+              targetLocale = loc.localeId;
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+
       _isSpeechListening = true;
       await _speech.listen(
         onResult: (result) {
           final words = result.recognizedWords.toLowerCase().trim();
           if (words.isEmpty) return;
-          _sttBusyErrorCount = 0;
-          _consecutiveNoMatchCount = 0;
-          debugPrint('[VOICE HEARD] "$words"');
+          debugPrint('🎙️ [VOICE HEARD] "$words"');
           if (_matchesWakePhrase(words)) {
             _fireTrigger('on-device speech recognition: "$words"');
           }
         },
         listenOptions: stt.SpeechListenOptions(
+          localeId: targetLocale,
           listenMode: stt.ListenMode.dictation,
           partialResults: true,
           cancelOnError: false,
@@ -486,17 +477,23 @@ class VoiceActivationService {
         final completer = Completer<Map<String, dynamic>>();
         String capturedWords = '';
 
-        // Detect if Kiswahili locale (sw_KE) is supported on device
-        String? swLocale;
-        try {
-          final locales = await testSpeech.locales();
-          for (final loc in locales) {
-            if (loc.localeId.toLowerCase().startsWith('sw')) {
-              swLocale = loc.localeId;
-              break;
+        final isSwahiliCandidate = candidatePhrase.toLowerCase().contains('msaada') ||
+            candidatePhrase.toLowerCase().contains('tuma') ||
+            candidatePhrase.toLowerCase().contains('nisaidie') ||
+            candidatePhrase.toLowerCase().contains('polisi') ||
+            candidatePhrase.toLowerCase().contains('okoa');
+        String? targetLocale;
+        if (isSwahiliCandidate) {
+          try {
+            final locales = await testSpeech.locales();
+            for (final loc in locales) {
+              if (loc.localeId.toLowerCase().startsWith('sw')) {
+                targetLocale = loc.localeId;
+                break;
+              }
             }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
 
         await testSpeech.listen(
           onResult: (result) {
@@ -514,7 +511,7 @@ class VoiceActivationService {
             }
           },
           listenOptions: stt.SpeechListenOptions(
-            localeId: swLocale,
+            localeId: targetLocale,
             listenMode: stt.ListenMode.dictation,
             partialResults: true,
             cancelOnError: false,
@@ -529,8 +526,8 @@ class VoiceActivationService {
             final isMatched = _matchesSinglePhrase(capturedWords, candidatePhrase) ||
                 _matchesWakePhrase(capturedWords);
             completer.complete({
-              'success': true,
-              'transcription': capturedWords.isNotEmpty ? capturedWords : 'No words detected',
+              'success': capturedWords.isNotEmpty,
+              'transcription': capturedWords,
               'matched': isMatched,
               'keyword': candidatePhrase,
             });
@@ -539,12 +536,16 @@ class VoiceActivationService {
 
         final result = await completer.future;
         try { testSpeech.stop(); } catch (_) {}
-        // Resume continuous listening
-        if (_isEnabled) unawaited(startListening());
-        return result;
+
+        // If on-device speech captured valid words, return it directly!
+        if (result['transcription'] != null && (result['transcription'] as String).isNotEmpty) {
+          if (_isEnabled) unawaited(startListening());
+          return result;
+        }
       }
 
-      // Attempt 2: AudioRecorder + Whisper backend fallback
+      // Attempt 2: AudioRecorder + Backend Google ASR fallback
+      // (Used when on-device STT is unavailable, returns silence, or needs cloud verification)
       final testRecorder = AudioRecorder();
       final testPath = '${Directory.systemTemp.path}/voice_test_${DateTime.now().millisecondsSinceEpoch}.wav';
 
@@ -580,10 +581,11 @@ class VoiceActivationService {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
         final transcription = (data['transcription'] ?? '').toString();
         final matched = data['emergency_detected'] == true ||
-            _matchesSinglePhrase(transcription, candidatePhrase);
+            _matchesSinglePhrase(transcription, candidatePhrase) ||
+            _matchesWakePhrase(transcription);
         return {
           'success': true,
-          'transcription': transcription,
+          'transcription': transcription.isNotEmpty ? transcription : 'No speech detected in clip',
           'matched': matched,
           'keyword': data['matched_keyword'] ?? candidatePhrase,
         };
