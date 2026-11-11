@@ -26,6 +26,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<ThemeController>();
     final controller = context.watch<EmergencyController>();
 
     return Scaffold(
@@ -83,7 +84,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
                     Icon(Icons.vibration_rounded, color: AppColors.sosRed, size: 18),
                     SizedBox(width: 6),
                     Text(
-                      'SHAKE DETECTED',
+                      'SHAKE DETECTING',
                       style: TextStyle(
                         color: AppColors.sosRed,
                         fontSize: 12,
@@ -109,7 +110,7 @@ class _EmergencyScreenState extends State<EmergencyScreen> {
                     Icon(Icons.mic_rounded, color: AppColors.sosRed, size: 18),
                     SizedBox(width: 6),
                     Text(
-                      'VOICE KEYWORD DETECTED',
+                      'VOICE DETECTING',
                       style: TextStyle(
                         color: AppColors.sosRed,
                         fontSize: 12,

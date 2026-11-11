@@ -32,6 +32,22 @@ class HomeController extends ChangeNotifier {
       }
 
       user = await _supabaseService.fetchUserProfile(authUser.id);
+      if (user == null || user!.fullName.isEmpty) {
+        final metaName = authUser.userMetadata?['full_name'] as String? ??
+            authUser.userMetadata?['name'] as String?;
+        user = UserModel(
+          id: authUser.id,
+          fullName: (metaName != null && metaName.isNotEmpty)
+              ? metaName
+              : (authUser.email?.split('@').first ?? 'SafeLink User'),
+          phoneNumber: authUser.userMetadata?['phone'] as String? ?? '',
+          email: authUser.email ?? '',
+          isCommunityResponder: authUser.userMetadata?['is_community_responder'] as bool? ?? false,
+          hasWearable: false,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+      }
       isResponderMode = user?.isCommunityResponder ?? false;
     } catch (e) {
       debugPrint('Error loading user: $e');

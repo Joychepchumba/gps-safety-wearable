@@ -970,7 +970,7 @@ class _MapScreenState extends State<MapScreen>
     final userPos = controller.currentPosition;
     final userLatLng = userPos != null
         ? LatLng(userPos.latitude, userPos.longitude)
-        : const LatLng(-1.2921, 36.8219);
+        : const LatLng(-1.31122, 36.81953);
 
     // Automatically align camera the instant user location is locked
     if (userPos != null && (!_hasInitiallyCentered || _isFollowingUser)) {

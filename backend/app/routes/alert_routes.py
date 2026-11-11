@@ -919,7 +919,7 @@ async def update_panic_location(panic_event_id: str, loc: LocationUpdate, supaba
 
 
 @router.get("/track/live", response_class=HTMLResponse)
-async def view_live_tracking(lat: float = -1.2921, lng: float = 36.8219, name: str = "SafeGuard User"):
+async def view_live_tracking(lat: float = -1.2907850038543573, lng: float = 36.78176897301627, name: str = "SafeGuard User"):
     mapbox_token = os.getenv("MAPBOX_WEB_TOKEN") or os.getenv("MAPBOX_ACCESS_TOKEN") or os.getenv("MAPBOX_TOKEN") or "pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA"
     return get_tracking_html(
         lat=lat,
@@ -935,8 +935,8 @@ async def view_live_tracking(lat: float = -1.2921, lng: float = 36.8219, name: s
 async def view_3d_tracking(panic_event_id: str, supabase: Client = Depends(get_supabase)):
     mapbox_token = os.getenv("MAPBOX_WEB_TOKEN") or os.getenv("MAPBOX_ACCESS_TOKEN") or os.getenv("MAPBOX_TOKEN") or "pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA"
     
-    lat = -1.2921
-    lng = 36.8219
+    lat = -1.2907850038543573
+    lng = 36.78176897301627
     status = "ACTIVE"
     user_name = "SafeGuard User in Distress"
     

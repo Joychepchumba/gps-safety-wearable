@@ -42,24 +42,19 @@ class AuthController extends ChangeNotifier {
       final Session? session = data.session;
       debugPrint('[AUTH] AuthState changed: event=$event, user=${session?.user.id}');
 
-      if (event == AuthChangeEvent.signedIn && session?.user != null) {
+      if ((event == AuthChangeEvent.signedIn ||
+              event == AuthChangeEvent.tokenRefreshed ||
+              event == AuthChangeEvent.userUpdated) &&
+          session?.user != null) {
         final user = session!.user;
-        currentUser = await _supabaseService.fetchUserProfile(user.id) ??
-            UserModel(
-              id: user.id,
-              fullName: user.userMetadata?['full_name'] as String? ??
-                  user.userMetadata?['name'] as String? ??
-                  'SafeLink User',
-              phoneNumber: user.userMetadata?['phone'] as String? ?? '',
-              email: user.email ?? '',
-              isCommunityResponder: user.userMetadata?['is_community_responder'] as bool? ?? false,
-              hasWearable: false,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            );
+        final wasAuthenticated =
+            _status == AuthStatus.authenticated && currentUser?.id == user.id;
+        currentUser = await _supabaseService.ensureOAuthUserProfile(user);
         _status = AuthStatus.authenticated;
         notifyListeners();
-        NavigationService.pushNamedAndRemoveUntil('/home', (route) => false);
+        if (!wasAuthenticated || event == AuthChangeEvent.signedIn) {
+          NavigationService.pushNamedAndRemoveUntil('/home', (route) => false);
+        }
       } else if (event == AuthChangeEvent.signedOut) {
         currentUser = null;
         _status = AuthStatus.unauthenticated;
@@ -74,10 +69,31 @@ class AuthController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-fetches the signed-in user's row from `public.users` and notifies all
+  /// listeners. AuthController.currentUser is the single source of truth for
+  /// the profile shown on Home, Profile and every other screen.
+  Future<void> refreshProfile() async {
+    final authUser = _supabaseService.currentUser;
+    if (authUser == null) return;
+    try {
+      final fresh = await _supabaseService.ensureOAuthUserProfile(authUser);
+      currentUser = fresh;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AUTH] refreshProfile failed: $e');
+    }
+  }
+
   /// Initial check to see if user is already logged in
   Future<void> checkInitialSession(BuildContext ctx) async {
     final user = _supabaseService.currentUser;
     if (user == null) {
+      if (_status == AuthStatus.authenticated && currentUser != null) {
+        if (ctx.mounted) {
+          Navigator.of(ctx).pushReplacementNamed('/home');
+        }
+        return;
+      }
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       if (ctx.mounted) {
@@ -88,12 +104,19 @@ class AuthController extends ChangeNotifier {
 
     try {
       // 1. Instantly authenticate and route to /home so emergency SOS is immediately available!
+      // Placeholder built from auth metadata; replaced by the public.users row below.
       currentUser = UserModel(
         id: user.id,
-        fullName: user.userMetadata?['full_name'] as String? ?? 'SafeLink User',
-        phoneNumber: user.userMetadata?['phone'] as String? ?? '',
+        fullName: user.userMetadata?['full_name'] as String? ??
+            user.userMetadata?['name'] as String? ??
+            '',
+        phoneNumber: user.userMetadata?['phone_number'] as String? ??
+            user.userMetadata?['phone'] as String? ??
+            '',
         email: user.email ?? '',
-        isCommunityResponder: user.userMetadata?['is_community_responder'] as bool? ?? false,
+        avatarUrl: user.userMetadata?['avatar_url'] as String?,
+        isCommunityResponder:
+            user.userMetadata?['is_community_responder'] as bool? ?? false,
         hasWearable: false,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
@@ -105,12 +128,10 @@ class AuthController extends ChangeNotifier {
         Navigator.of(ctx).pushReplacementNamed('/home');
       }
 
-      // 2. Asynchronously refresh full profile in background without blocking emergency screen
-      _supabaseService.fetchUserProfile(user.id).then((profile) {
-        if (profile != null) {
-          currentUser = profile;
-          notifyListeners();
-        }
+      // 2. Asynchronously refresh/create full profile in background without blocking emergency screen
+      _supabaseService.ensureOAuthUserProfile(user).then((profile) {
+        currentUser = profile;
+        notifyListeners();
       }).catchError((_) {});
     } catch (_) {
       // In case of any error, keep user on home screen if session exists
@@ -157,17 +178,7 @@ class AuthController extends ChangeNotifier {
     try {
       final res = await _supabaseService.verifyEmailOtp(email: email, token: token);
       if (res.user != null) {
-        currentUser = await _supabaseService.fetchUserProfile(res.user!.id) ??
-            UserModel(
-              id: res.user!.id,
-              fullName: res.user!.userMetadata?['full_name'] as String? ?? 'SafeLink User',
-              phoneNumber: res.user!.userMetadata?['phone'] as String? ?? '',
-              email: res.user!.email ?? email,
-              isCommunityResponder: res.user!.userMetadata?['is_community_responder'] as bool? ?? false,
-              hasWearable: false,
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-            );
+        currentUser = await _supabaseService.ensureOAuthUserProfile(res.user!);
         _status = AuthStatus.authenticated;
         notifyListeners();
         if (ctx.mounted) {
@@ -193,8 +204,17 @@ class AuthController extends ChangeNotifier {
     try {
       final launched = await _supabaseService.signInWithGoogle();
       if (!launched) {
-        throw Exception('Could not launch Google Sign-In.');
+        throw Exception('Could not launch Google Sign-In in browser.');
       }
+      // Reset loading spinner after launching external browser so UI stays responsive
+      // if the user navigates back before completing OAuth; _listenToAuthChanges
+      // will automatically transition to authenticated & route to /home upon callback.
+      Future.delayed(const Duration(seconds: 2), () {
+        if (_status == AuthStatus.loading && _supabaseService.currentUser == null) {
+          _status = AuthStatus.unauthenticated;
+          notifyListeners();
+        }
+      });
     } catch (e) {
       errorMessage = _formatErrorMessage(e);
       _status = AuthStatus.error;
@@ -237,7 +257,7 @@ class AuthController extends ChangeNotifier {
         }
       }
 
-      currentUser = await _supabaseService.fetchUserProfile(response.user!.id);
+      currentUser = await _supabaseService.ensureOAuthUserProfile(response.user!);
       _status = AuthStatus.authenticated;
       notifyListeners();
       if (ctx.mounted) {
@@ -275,7 +295,7 @@ class AuthController extends ChangeNotifier {
 
       final user = _supabaseService.currentUser;
       if (user != null) {
-        currentUser = await _supabaseService.fetchUserProfile(user.id);
+        currentUser = await _supabaseService.ensureOAuthUserProfile(user);
       }
 
       _status = AuthStatus.authenticated;
@@ -590,7 +610,9 @@ class AuthController extends ChangeNotifier {
             'full_name': fullName.trim(),
             'phone_number': phoneNumber.trim(),
             'is_community_responder': isCommunityResponder,
-            'emergency_password': emergencyPassword != null && emergencyPassword.trim().isNotEmpty ? emergencyPassword.trim() : null,
+            'emergency_password': emergencyPassword != null && emergencyPassword.trim().isNotEmpty
+                ? emergencyPassword.trim()
+                : null,
           }),
         ).timeout(const Duration(seconds: 5));
       } catch (backendError) {

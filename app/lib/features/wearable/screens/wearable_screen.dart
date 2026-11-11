@@ -2,166 +2,1067 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/theme/theme_controller.dart';
-import '../../../models/wearable_device_model.dart';
+import '../../emergency/controllers/emergency_controller.dart';
 import '../controllers/wearable_controller.dart';
 
-class WearableScreen extends StatelessWidget {
+class WearableScreen extends StatefulWidget {
   const WearableScreen({super.key});
 
   @override
+  State<WearableScreen> createState() => _WearableScreenState();
+}
+
+class _WearableScreenState extends State<WearableScreen> {
+  void _showPhoneSettingsSheet(BuildContext context, WearableController controller) {
+    final pendantPhoneCtrl = TextEditingController(text: controller.pendantSimNumber);
+    final guardianPhoneCtrl = TextEditingController(text: controller.guardianPhone);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: context.cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 16,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Pendant & Parental Settings',
+                          style: TextStyle(
+                            color: ctx.textPrimary,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close, color: ctx.textSecondary),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Pendant SIM Phone Number (for direct calling):',
+                    style: TextStyle(color: ctx.textSecondary, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: pendantPhoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    style: TextStyle(color: ctx.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: '+254740034499',
+                      hintStyle: TextStyle(color: ctx.textMuted),
+                      filled: true,
+                      fillColor: ctx.inputBg,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: ctx.cardBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: ctx.cardBorder),
+                      ),
+                      prefixIcon: const Icon(Icons.sim_card_outlined, color: AppColors.primary, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Parent / Guardian Phone Number (called when child holds pendant 3s):',
+                    style: TextStyle(color: ctx.textSecondary, fontSize: 12.5),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    controller: guardianPhoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    style: TextStyle(color: ctx.textPrimary, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: '+254740034499',
+                      hintStyle: TextStyle(color: ctx.textMuted),
+                      filled: true,
+                      fillColor: ctx.inputBg,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: ctx.cardBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: ctx.cardBorder),
+                      ),
+                      prefixIcon: const Icon(Icons.supervisor_account_rounded, color: AppColors.success, size: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await controller.updatePendantPhoneConfig(
+                          pendantSim: pendantPhoneCtrl.text,
+                          guardianNumber: guardianPhoneCtrl.text,
+                        );
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Pendant & Guardian phone numbers synced!'),
+                              backgroundColor: AppColors.success,
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.save_rounded, color: Colors.white, size: 18),
+                      label: const Text(
+                        'Save & Sync to Pendant',
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final themeController = context.watch<ThemeController>();
     final controller = context.watch<WearableController>();
+    final isConnected = controller.isBleConnected || controller.pairedDevice != null;
+    final isChildMode = controller.isChildMode;
+    final deviceTitle = controller.pairedDevice?.deviceName.isNotEmpty == true
+        ? controller.pairedDevice!.deviceName
+        : 'SafeLink Pendant #JK001';
 
     return Scaffold(
       backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: context.scaffoldBg,
         elevation: 0,
+        centerTitle: true,
         leading: IconButton(
           icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Safety Pendant', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold)),
+        title: Text(
+          'My Pendant',
+          style: TextStyle(
+            color: context.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: context.isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+            icon: Icon(
+              context.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+              color: context.textPrimary,
+              size: 21,
+            ),
+            onPressed: () => themeController.toggleDarkMode(),
+          ),
+          IconButton(
+            icon: Icon(Icons.settings_outlined, color: context.textPrimary, size: 22),
+            tooltip: 'Pendant Phone & Guardian Settings',
+            onPressed: () => _showPhoneSettingsSheet(context, controller),
+          ),
+        ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: controller.pairedDevice != null
-              ? _buildPairedView(context, controller.pairedDevice!, controller)
-              : _buildUnpairedView(context, controller),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPairedView(BuildContext context, WearableDeviceModel device, WearableController controller) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 10),
-          const Icon(Icons.watch, size: 84, color: AppColors.accent),
-          const SizedBox(height: 16),
-          Text(
-            device.deviceName.isNotEmpty ? device.deviceName : 'SafeGuard Pendant',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: context.textPrimary, fontSize: 22, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 24),
-          _buildInfoRow(context, 'MAC Address', device.deviceMac),
-          _buildInfoRow(context, 'Firmware Version', device.firmwareVersion ?? '1.0.0'),
-          _buildInfoRow(context, 'Status', device.isActive ? 'Active' : 'Inactive'),
-          _buildInfoRow(context, 'Last Seen', 'Active now'),
-          const SizedBox(height: 36),
-          OutlinedButton(
-            onPressed: () => controller.unpairDevice(),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.error,
-              side: const BorderSide(color: AppColors.error),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: const Text('Unpair Device', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUnpairedView(BuildContext context, WearableController controller) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: SingleChildScrollView(
-            physics: const BouncingScrollPhysics(),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 30),
-                if (controller.isScanning)
-                  const Center(
-                    child: SizedBox(
-                      width: 80,
-                      height: 80,
-                      child: CircularProgressIndicator(
-                        color: AppColors.accent,
-                        strokeWidth: 2.5,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 1. HERO PENDANT IMAGE WITH "CONNECTED" OVERLAY
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Stack(
+                  alignment: Alignment.bottomCenter,
+                  children: [
+                    Image.asset(
+                      'assets/images/pendant_device.jpg',
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => Container(
+                        height: 180,
+                        color: context.surfaceBg,
+                        child: Center(
+                          child: Icon(Icons.watch_rounded, size: 64, color: context.textSecondary),
+                        ),
                       ),
                     ),
-                  )
-                else
-                  Icon(Icons.bluetooth_searching, size: 80, color: context.textSecondary),
-                const SizedBox(height: 20),
-                Text(
-                  controller.isScanning ? 'Scanning for SafeGuard Pendant...' : 'No Pendant Connected',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: context.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Make sure your pendant is turned on and in Bluetooth range.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: context.textSecondary, fontSize: 13),
-                ),
-                const SizedBox(height: 28),
-                if (!controller.isScanning && controller.discoveredDevices.isEmpty)
-                  ElevatedButton(
-                    onPressed: () => controller.startScan(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.accent,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    child: const Text(
-                      'Scan for Pendant',
-                      style: TextStyle(color: AppColors.background, fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                  ),
-                if (controller.discoveredDevices.isNotEmpty) ...[
-                  Text(
-                    'Discovered Devices:',
-                    style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: controller.discoveredDevices.length,
-                    itemBuilder: (context, index) {
-                      final device = controller.discoveredDevices[index];
-                      return ListTile(
-                        leading: const Icon(Icons.bluetooth, color: AppColors.accent),
-                        title: Text(device.platformName.isNotEmpty ? device.platformName : 'SafeGuard Device', style: TextStyle(color: context.textPrimary)),
-                        subtitle: Text(device.remoteId.str, style: TextStyle(color: context.textSecondary)),
-                        trailing: ElevatedButton(
-                          onPressed: () => controller.pairDevice(device),
-                          style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent),
-                          child: const Text('Pair', style: TextStyle(color: AppColors.background, fontWeight: FontWeight.bold)),
+                    Container(
+                      height: 60,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withValues(alpha: 0.72),
+                          ],
                         ),
-                      );
-                    },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        isConnected ? 'CONNECTED' : 'READY TO PAIR',
+                        style: TextStyle(
+                          color: isConnected ? const Color(0xFF2ECC71) : Colors.amberAccent,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // 2. CONNECTION STATUS CARD
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: context.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: context.cardBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: context.isDarkMode
+                          ? Colors.black.withValues(alpha: 0.25)
+                          : AppColors.cardShadow,
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                            color: isConnected ? AppColors.success : Colors.amber,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          isConnected ? 'Connected' : 'Standby',
+                          style: TextStyle(
+                            color: isConnected ? AppColors.success : Colors.amber,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: isChildMode
+                                ? const Color(0xFF8E44AD).withValues(alpha: 0.16)
+                                : AppColors.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isChildMode ? const Color(0xFF8E44AD) : AppColors.primary,
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isChildMode ? Icons.child_care_rounded : Icons.person_rounded,
+                                size: 13,
+                                color: isChildMode ? const Color(0xFF8E44AD) : AppColors.primary,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isChildMode ? 'Child Mode' : 'Adult Mode',
+                                style: TextStyle(
+                                  color: isChildMode ? const Color(0xFF8E44AD) : AppColors.primary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                deviceTitle,
+                                style: TextStyle(
+                                  color: context.textPrimary,
+                                  fontSize: 15.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Bluetooth signal',
+                                style: TextStyle(
+                                  color: context.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              _buildSignalBars(context, controller.signalBars, isConnected),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton(
+                          onPressed: () async {
+                            if (controller.isBleConnected) {
+                              await controller.unpairDevice();
+                            } else {
+                              await controller.startScan();
+                            }
+                          },
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: context.inputBg,
+                            foregroundColor: context.textPrimary,
+                            side: BorderSide(color: context.cardBorder),
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                          child: Text(
+                            controller.isScanning
+                                ? 'Scanning...'
+                                : (controller.isBleConnected ? 'Disconnect' : 'Connect'),
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (!controller.isBleConnected) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: controller.isScanning ? null : () => controller.startScan(),
+                          icon: const Icon(Icons.bluetooth_searching_rounded, size: 16),
+                          label: Text(
+                            controller.isScanning
+                                ? 'Scanning for SafeGuard Pendant...'
+                                : 'Scan & Reconnect Bluetooth',
+                            style: const TextStyle(fontSize: 12.5),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            side: const BorderSide(color: AppColors.primary),
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (controller.discoveredDevices.isNotEmpty && !controller.isBleConnected) ...[
+                      const SizedBox(height: 6),
+                      ...controller.discoveredDevices.map(
+                        (d) => ListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.bluetooth, color: AppColors.primary, size: 20),
+                          title: Text(
+                            d.platformName.isNotEmpty ? d.platformName : 'SafeGuard Pendant',
+                            style: TextStyle(color: context.textPrimary, fontSize: 13),
+                          ),
+                          subtitle: Text(
+                            d.remoteId.str,
+                            style: TextStyle(color: context.textSecondary, fontSize: 11),
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: () => controller.pairDevice(d),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.success,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            ),
+                            child: const Text(
+                              'Pair',
+                              style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 3. BATTERY INDICATOR CARD
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: context.cardBg,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.cardBorder),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: AppColors.success, width: 2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(
+                        Icons.bolt_rounded,
+                        color: AppColors.success,
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      '${controller.batteryPercent}%',
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'About ${controller.estimatedHoursRemaining} hours remaining',
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.battery_charging_full_rounded,
+                                color: context.textSecondary,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  'Charge via USB-C',
+                                  style: TextStyle(
+                                    color: context.textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 4. TOUCH SENSITIVITY & CANCELLATION WINDOW SLIDERS
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: context.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: context.cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Touch sensitivity',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          isChildMode
+                              ? 'Disabled (Child Mode)'
+                              : '${controller.touchSensitivitySeconds.round()} seconds',
+                          style: TextStyle(
+                            color: isChildMode ? AppColors.warning : AppColors.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: isChildMode ? context.textMuted : AppColors.primary,
+                        inactiveTrackColor: context.inputBg,
+                        thumbColor: AppColors.primary,
+                        trackHeight: 6,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                      ),
+                      child: Slider(
+                        value: controller.touchSensitivitySeconds,
+                        min: 1,
+                        max: 10,
+                        divisions: 9,
+                        onChanged: isChildMode
+                            ? null
+                            : (val) => controller.setTouchSensitivitySeconds(val),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('1s', style: TextStyle(color: context.textSecondary, fontSize: 11.5)),
+                          Text('10s', style: TextStyle(color: context.textSecondary, fontSize: 11.5)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Cancellation window',
+                          style: TextStyle(
+                            color: context.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${controller.cancellationWindowSeconds.round()} seconds',
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: AppColors.primary,
+                        inactiveTrackColor: context.inputBg,
+                        thumbColor: AppColors.primary,
+                        trackHeight: 6,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+                      ),
+                      child: Slider(
+                        value: controller.cancellationWindowSeconds,
+                        min: 5,
+                        max: 30,
+                        divisions: 25,
+                        onChanged: (val) => controller.setCancellationWindowSeconds(val),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('5s', style: TextStyle(color: context.textSecondary, fontSize: 11.5)),
+                          Text('30s', style: TextStyle(color: context.textSecondary, fontSize: 11.5)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 5. WEARER MODE & PARENTAL CONTROL CARD (Adult vs Child Mode)
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: context.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isChildMode
+                        ? const Color(0xFF8E44AD).withValues(alpha: 0.5)
+                        : context.cardBorder,
                   ),
-                ],
-              ],
-            ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          isChildMode ? Icons.family_restroom_rounded : Icons.verified_user_rounded,
+                          color: isChildMode ? const Color(0xFF8E44AD) : AppColors.primary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Wearer Mode & Parental Control',
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      isChildMode
+                          ? 'Child Mode: Touch SOS on pendant is disabled to prevent accidental triggers. Holding pendant 3s calls parent. Parents can Locate & Call below.'
+                          : 'Adult Mode: Wearer can trigger SOS via pendant touch sensor AND control the pendant from the phone app.',
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => controller.setOwnerMode(PendantOwnerMode.adult),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: !isChildMode ? AppColors.primary : context.inputBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: !isChildMode ? AppColors.primary : context.cardBorder,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.person_rounded,
+                                    color: !isChildMode ? Colors.white : context.textSecondary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Adult Mode',
+                                    style: TextStyle(
+                                      color: !isChildMode ? Colors.white : context.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    'Touch SOS + App',
+                                    style: TextStyle(
+                                      color: !isChildMode ? Colors.white70 : context.textSecondary,
+                                      fontSize: 10,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () => controller.setOwnerMode(PendantOwnerMode.child),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: isChildMode ? const Color(0xFF8E44AD) : context.inputBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isChildMode ? const Color(0xFF8E44AD) : context.cardBorder,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.child_care_rounded,
+                                    color: isChildMode ? Colors.white : context.textSecondary,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    'Child Mode',
+                                    style: TextStyle(
+                                      color: isChildMode ? Colors.white : context.textPrimary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  Text(
+                                    'Parent Controlled',
+                                    style: TextStyle(
+                                      color: isChildMode ? Colors.white70 : context.textSecondary,
+                                      fontSize: 10,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 6. REMOTE PENDANT CONTROL PANEL
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: context.cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: context.cardBorder),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isChildMode
+                                ? 'Parent Remote Monitor & Control'
+                                : 'Remote Pendant Controls',
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (controller.lastCommandFeedback != null)
+                          const Icon(Icons.check_circle, color: AppColors.success, size: 17),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isChildMode
+                          ? 'Monitor your child anytime: activate live GPS locate, call the pendant, or request a listen-in callback.'
+                          : 'Control your pendant directly from your phone via Bluetooth & GSM.',
+                      style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+                    ),
+                    if (controller.lastCommandFeedback != null) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: context.inputBg,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.info_outline, color: AppColors.primary, size: 15),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                controller.lastCommandFeedback!,
+                                style: TextStyle(color: context.textPrimary, fontSize: 11.5),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (controller.pendantLat != null && controller.pendantLng != null) ...[
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: () => Navigator.pushNamed(context, '/map'),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.10),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: AppColors.success.withValues(alpha: 0.45)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on_rounded, color: AppColors.success, size: 18),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Live Pendant Location Fix',
+                                      style: TextStyle(
+                                        color: AppColors.success,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${controller.pendantLat!.toStringAsFixed(5)}, ${controller.pendantLng!.toStringAsFixed(5)}',
+                                      style: TextStyle(color: context.textSecondary, fontSize: 11),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const Text(
+                                'Map →',
+                                style: TextStyle(
+                                  color: AppColors.success,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildControlActionButton(
+                            context: context,
+                            icon: Icons.my_location_rounded,
+                            label: controller.isLocatingPendant ? 'Locating...' : 'Activate Locate',
+                            subtitle: 'Live GPS fix',
+                            color: AppColors.success,
+                            onTap: () => controller.locatePendantNow(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildControlActionButton(
+                            context: context,
+                            icon: Icons.phone_in_talk_rounded,
+                            label: 'Call Pendant',
+                            subtitle: 'Dial SIM voice',
+                            color: AppColors.primary,
+                            onTap: () => controller.callPendantDirectly(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildControlActionButton(
+                            context: context,
+                            icon: Icons.hearing_rounded,
+                            label: 'Call-Back',
+                            subtitle: 'Listen-in audio',
+                            color: const Color(0xFF8E44AD),
+                            onTap: () => controller.requestPendantCallBack(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildControlActionButton(
+                            context: context,
+                            icon: Icons.light_mode_rounded,
+                            label: 'Find Pendant',
+                            subtitle: 'Strobe LED 10s',
+                            color: AppColors.warning,
+                            onTap: () => controller.findPendantLedStrobe(),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          context.read<EmergencyController>().trigger(TriggerMethod.pendantTouch);
+                          Navigator.pushNamed(context, '/emergency');
+                        },
+                        icon: const Icon(Icons.sos_rounded, color: AppColors.sosRed, size: 18),
+                        label: Text(
+                          isChildMode
+                              ? 'Trigger Emergency SOS for Child'
+                              : 'Trigger Remote SOS Now',
+                          style: const TextStyle(
+                            color: AppColors.sosRed,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: AppColors.sosRed),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
-  Widget _buildInfoRow(BuildContext context, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: TextStyle(color: context.textSecondary, fontSize: 14)),
-          Text(value, style: TextStyle(color: context.textPrimary, fontSize: 14, fontWeight: FontWeight.bold)),
-        ],
+  Widget _buildSignalBars(BuildContext context, int activeBars, bool isConnected) {
+    final heights = [7.0, 11.0, 15.0, 19.0];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(4, (index) {
+        final active = isConnected && index < activeBars;
+        return Container(
+          margin: const EdgeInsets.only(right: 4),
+          width: 4.5,
+          height: heights[index],
+          decoration: BoxDecoration(
+            color: active ? AppColors.success : context.cardBorder,
+            borderRadius: BorderRadius.circular(2.5),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _buildControlActionButton({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        decoration: BoxDecoration(
+          color: context.inputBg,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 17),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: context.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      color: context.textSecondary,
+                      fontSize: 10,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

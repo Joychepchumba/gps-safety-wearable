@@ -12,15 +12,17 @@ class ShakeDetectionService {
   bool _isListening = false;
   bool get isListening => _isListening;
 
-  // Configuration
-  double shakeThresholdGravity = 2.5; // ~2.5g
-  int minShakeCount = 2; // At least 2 quick shakes
-  int shakeWindowMs = 1200; // Within 1.2 seconds
-  int debounceBetweenPeaksMs = 150; // 150ms between directional peaks
+  // Configuration — tuned to prevent accidental false-positives when walking, running, or picking up phone
+  double shakeThresholdGravity = 3.25; // ~3.25g total (~2.25g net acceleration above 1g gravity)
+  int minShakeCount = 4; // At least 4 vigorous directional shakes required
+  int shakeWindowMs = 1500; // Within 1.5 seconds
+  int debounceBetweenPeaksMs = 180; // 180ms between directional peaks
+  static const Duration _triggerCooldown = Duration(seconds: 15);
 
   int _shakeCount = 0;
   DateTime? _lastShakeTime;
   DateTime? _lastPeakTime;
+  DateTime? _lastTriggerTime;
 
   void start({VoidCallback? onShake}) {
     if (onShake != null) {
@@ -94,6 +96,14 @@ class ShakeDetectionService {
   }
 
   Future<void> _triggerShakeAlert() async {
+    final now = DateTime.now();
+    if (_lastTriggerTime != null &&
+        now.difference(_lastTriggerTime!) < _triggerCooldown) {
+      debugPrint('[ShakeDetectionService] Shake ignored (within 15s post-trigger cooldown)');
+      return;
+    }
+    _lastTriggerTime = now;
+
     debugPrint('[ShakeDetectionService] SHAKE DETECTED -> Triggering Emergency SOS!');
 
     // Provide immediate haptic feedback

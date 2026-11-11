@@ -169,20 +169,26 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.analytics_rounded, color: AppColors.primary, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Safety Analytics Overview',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: context.textPrimary,
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.analytics_rounded, color: AppColors.primary, size: 20),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Safety Analytics Overview',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: context.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -206,35 +212,38 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
           const SizedBox(height: 14),
 
           // 3-Metric Tiles
-          Row(
-            children: [
-              Expanded(
-                child: _buildMetricTile(
-                  label: 'Total Alerts',
-                  value: controller.totalAlerts.toString(),
-                  icon: Icons.notifications_active_rounded,
-                  color: AppColors.primary,
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _buildMetricTile(
+                    label: 'Total Alerts',
+                    value: controller.totalAlerts.toString(),
+                    icon: Icons.notifications_active_rounded,
+                    color: AppColors.primary,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildMetricTile(
-                  label: 'Active',
-                  value: controller.activeCount.toString(),
-                  icon: Icons.emergency_rounded,
-                  color: controller.activeCount > 0 ? AppColors.sosRed : AppColors.textMuted,
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildMetricTile(
+                    label: 'Active',
+                    value: controller.activeCount.toString(),
+                    icon: Icons.emergency_rounded,
+                    color: controller.activeCount > 0 ? AppColors.sosRed : AppColors.textMuted,
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _buildMetricTile(
-                  label: 'Avg Response',
-                  value: controller.averageResolutionTime,
-                  icon: Icons.timer_rounded,
-                  color: const Color(0xFF0F766E),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildMetricTile(
+                    label: 'Avg Response',
+                    value: controller.averageResolutionTime,
+                    icon: Icons.timer_rounded,
+                    color: const Color(0xFF0F766E),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -248,7 +257,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
@@ -256,20 +265,21 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 14, color: color),
-              const Spacer(),
-            ],
-          ),
+          Icon(icon, size: 14, color: color),
           const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: color,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
             ),
           ),
           const SizedBox(height: 2),
@@ -280,6 +290,7 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
               fontWeight: FontWeight.w700,
               color: context.textSecondary,
             ),
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ],
@@ -456,7 +467,14 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.textPrimary)),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: context.textPrimary),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
             Text('$count (${(pct * 100).toStringAsFixed(0)}%)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
           ],
         ),
@@ -569,12 +587,20 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                       Text(
                         triggerTitle,
                         style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: context.textPrimary),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
-                      Text(dateStr, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                      Text(
+                        dateStr,
+                        style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 // Status Badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -651,13 +677,20 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: () => _open3DMap(lat, lon, alert.id),
-                        icon: const Icon(Icons.view_in_ar_rounded, size: 16, color: Colors.white),
-                        label: const Text('Live 3D Map', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                        icon: const Icon(Icons.view_in_ar_rounded, size: 15, color: Colors.white),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            'Live 3D Map',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           elevation: 0,
+                          minimumSize: const Size(0, 38),
                         ),
                       ),
                     ),
@@ -667,9 +700,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                     OutlinedButton(
                       onPressed: () => _openGoogleMaps(lat, lon),
                       style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         side: BorderSide(color: context.cardBorder),
+                        minimumSize: const Size(38, 38),
                       ),
                       child: Icon(Icons.map_rounded, size: 16, color: context.textPrimary),
                     ),
@@ -686,9 +720,10 @@ class _AlertHistoryScreenState extends State<AlertHistoryScreen> {
                           );
                         },
                         style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           side: const BorderSide(color: AppColors.success),
+                          minimumSize: const Size(0, 38),
                         ),
                         child: const Text('Resolve', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.success)),
                       ),

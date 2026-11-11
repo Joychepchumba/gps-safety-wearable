@@ -1,520 +1,851 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../../core/constants/app_colors.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../../../core/theme/theme_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
 import '../../emergency/services/voice_activation_service.dart';
-import '../../../core/di/service_locator.dart';
 
-class VoiceSettingsScreen extends StatefulWidget {
-  const VoiceSettingsScreen({super.key});
+/// Callback type so MapPage (or any parent) can react when the wake word fires.
+typedef OnWakeWordDetected = void Function();
+
+/// Main Voice Activation configuration page.
+/// Aliased as VoiceSettingsScreen for backwards compatibility with existing routes.
+class VoiceActivationPage extends StatefulWidget {
+  final OnWakeWordDetected? onWakeWordDetected;
+
+  const VoiceActivationPage({super.key, this.onWakeWordDetected});
 
   @override
-  State<VoiceSettingsScreen> createState() => _VoiceSettingsScreenState();
+  State<VoiceActivationPage> createState() => _VoiceActivationPageState();
 }
 
-class _VoiceSettingsScreenState extends State<VoiceSettingsScreen> {
-  final VoiceActivationService _voiceService = sl<VoiceActivationService>();
-  final TextEditingController _customPhraseController = TextEditingController();
+class VoiceSettingsScreen extends StatelessWidget {
+  final OnWakeWordDetected? onWakeWordDetected;
+  const VoiceSettingsScreen({super.key, this.onWakeWordDetected});
 
-  bool _isListeningEnabled = true;
-  String _selectedPhrase = 'tuma msaada';
-  bool _isTesting = false;
-  int _countdownSeconds = 0;
-  Timer? _countdownTimer;
-  String _liveHearingText = '';
-  String? _testResultText;
-  bool? _testResultMatched;
+  @override
+  Widget build(BuildContext context) {
+    return VoiceActivationPage(onWakeWordDetected: onWakeWordDetected);
+  }
+}
+
+class _VoiceActivationPageState extends State<VoiceActivationPage>
+    with SingleTickerProviderStateMixin {
+  bool _isEnabled = true;
+  String _wakeWord = 'tuma msaada';
+  final _wakeWordCtrl = TextEditingController();
+
+  bool _isListening = false;
+  bool _triggerSosOnTestMatch = false;
+  String _heardText = '';
+  String? _matchedKeyword;
+  double _confidence = 0.0;
+  Timer? _testTimeoutTimer;
+
+  _Status _status = _Status.idle;
+
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+
+  static const _blue = Color(0xFF4FABCB);
 
   final List<Map<String, String>> _suggestedPhrases = [
-    {'phrase': 'tuma msaada', 'label': 'Tuma msaada (Swahili - Send help)'},
-    {'phrase': 'nisaidie', 'label': 'Nisaidie (Swahili - Help me)'},
-    {'phrase': 'piga polisi', 'label': 'Piga polisi (Swahili - Call police)'},
-    {'phrase': 'okoa maisha', 'label': 'Okoa maisha (Swahili - Save life)'},
-    {'phrase': 'send help', 'label': 'Send help (English)'},
-    {'phrase': 'help me', 'label': 'Help me (English)'},
-    {'phrase': 'emergency', 'label': 'Emergency (English)'},
-    {'phrase': 'call the police', 'label': 'Call the police (English)'},
+    {'phrase': 'tuma msaada', 'label': 'tuma msaada (Swahili)'},
+    {'phrase': 'nisaidie', 'label': 'nisaidie (Swahili)'},
+    {'phrase': 'kujeni hapa', 'label': 'kujeni hapa (Swahili)'},
+    {'phrase': 'nisaidie haraka', 'label': 'nisaidie haraka (Swahili)'},
+    {'phrase': 'okoa maisha', 'label': 'okoa maisha (Swahili)'},
+    {'phrase': 'piga polisi', 'label': 'piga polisi (Swahili)'},
+    {'phrase': 'help me', 'label': 'help me (English)'},
+    {'phrase': 'send help', 'label': 'send help (English)'},
+    {'phrase': 'call the police', 'label': 'call the police (English)'},
+    {'phrase': 'emergency', 'label': 'emergency (English)'},
   ];
 
   @override
   void initState() {
     super.initState();
-    _isListeningEnabled = _voiceService.isEnabled;
-    _selectedPhrase = _voiceService.wakePhrase;
-    _customPhraseController.text = _selectedPhrase;
+    _loadSettings();
+
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
+    _pulseAnim = Tween<double>(
+      begin: 1.0,
+      end: 1.25,
+    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
   }
 
   @override
   void dispose() {
-    _countdownTimer?.cancel();
-    _customPhraseController.dispose();
+    _testTimeoutTimer?.cancel();
+    _pulseCtrl.dispose();
+    _wakeWordCtrl.dispose();
+
+    // Ensure continuous background voice protection is resumed when leaving
+    VoiceActivationService.instance.stopInteractiveTest(resumeContinuous: _isEnabled);
+    if (_isEnabled) {
+      if (widget.onWakeWordDetected != null) {
+        VoiceActivationService.instance.onWakeWordDetected = widget.onWakeWordDetected;
+      }
+      VoiceActivationService.instance.startIfEnabled();
+    } else {
+      VoiceActivationService.instance.stop();
+    }
+
     super.dispose();
   }
 
-  Future<void> _testVoiceWithModel() async {
-    final phraseToTest = _customPhraseController.text.trim();
-    if (phraseToTest.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select or type a phrase first')),
-      );
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _isEnabled = prefs.getBool('voice_activation_enabled') ?? true;
+      _wakeWord = prefs.getString('voice_wake_word') ?? 'tuma msaada';
+      _wakeWordCtrl.text = _wakeWord;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    final trimmed = _wakeWordCtrl.text.trim().toLowerCase();
+    if (trimmed.isEmpty) {
+      _showSnack('Wake phrase cannot be empty', isError: true);
       return;
     }
 
-    _countdownTimer?.cancel();
-    setState(() {
-      _isTesting = true;
-      _countdownSeconds = 4;
-      _liveHearingText = 'Listening... Speak your phrase now!';
-      _testResultText = null;
-      _testResultMatched = null;
-    });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('voice_activation_enabled', _isEnabled);
+    await prefs.setString('voice_wake_word', trimmed);
+    setState(() => _wakeWord = trimmed);
 
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
+    if (!mounted) return;
+    try {
+      final emergencyController = context.read<EmergencyController>();
+      await emergencyController.updateVoiceSettings(
+        enabled: _isEnabled,
+        phrase: trimmed,
+      );
+    } catch (_) {
+      await VoiceActivationService.instance.updateSettings(
+        enabled: _isEnabled,
+        phrase: trimmed,
+      );
+    }
+
+    _showSnack('Voice settings saved & active in background ✓');
+  }
+
+  Future<void> _toggleListening() async {
+    if (_isListening) {
+      _testTimeoutTimer?.cancel();
+      await VoiceActivationService.instance.stopInteractiveTest(resumeContinuous: _isEnabled);
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          if (_status == _Status.listening) {
+            _status = _heardText.isNotEmpty ? _Status.missed : _Status.idle;
+          }
+        });
       }
-      setState(() {
-        if (_countdownSeconds > 1) {
-          _countdownSeconds--;
-        } else {
-          _countdownSeconds = 0;
-          timer.cancel();
-        }
-      });
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+      return;
+    }
+
+    setState(() {
+      _isListening = true;
+      _heardText = '';
+      _matchedKeyword = null;
+      _confidence = 0.0;
+      _status = _Status.listening;
     });
 
-    final res = await _voiceService.recordAndTestPhrase(
-      phraseToTest,
-      duration: const Duration(seconds: 4),
-      onPartialHeard: (partial) {
-        if (mounted) {
+    _pulseCtrl.repeat(reverse: true);
+
+    final started = await VoiceActivationService.instance.startInteractiveTest(
+      candidatePhrase: _wakeWord,
+      onResult: (heard, confidence, isFinal, matchedKeyword) {
+        if (!mounted) return;
+        setState(() {
+          _heardText = heard;
+          _confidence = confidence;
+        });
+
+        if (matchedKeyword != null) {
+          _testTimeoutTimer?.cancel();
           setState(() {
-            _liveHearingText = 'Hearing: "$partial"...';
+            _matchedKeyword = matchedKeyword;
+            _isListening = false;
+            _status = _Status.detected;
           });
+          _pulseCtrl.stop();
+          _pulseCtrl.reset();
+          VoiceActivationService.instance.stopInteractiveTest(resumeContinuous: _isEnabled);
+
+          if (_triggerSosOnTestMatch) {
+            try {
+              context.read<EmergencyController>().trigger(TriggerMethod.voiceKeyword);
+            } catch (_) {}
+          }
+        } else if (isFinal) {
+          _testTimeoutTimer?.cancel();
+          setState(() {
+            _isListening = false;
+            _status = _Status.missed;
+          });
+          _pulseCtrl.stop();
+          _pulseCtrl.reset();
+          VoiceActivationService.instance.stopInteractiveTest(resumeContinuous: _isEnabled);
         }
       },
     );
 
-    _countdownTimer?.cancel();
-    if (!mounted) return;
-    setState(() {
-      _isTesting = false;
-      _countdownSeconds = 0;
-      if (res['success'] == true) {
-        final transcription = res['transcription'] as String;
-        final matched = res['matched'] as bool;
-        _testResultText = transcription;
-        _testResultMatched = matched;
-      } else {
-        _testResultText = res['error'] ?? 'Audio verification failed';
-        _testResultMatched = false;
+    if (!started) {
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+          _status = _Status.error;
+        });
       }
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
+      _showSnack('Microphone or speech engine unavailable. Check permissions.', isError: true);
+      return;
+    }
+
+    _testTimeoutTimer?.cancel();
+    _testTimeoutTimer = Timer(const Duration(seconds: 12), () {
+      if (!mounted || !_isListening) return;
+      VoiceActivationService.instance.stopInteractiveTest(resumeContinuous: _isEnabled);
+      setState(() {
+        _isListening = false;
+        if (_status == _Status.listening) {
+          _status = _heardText.isNotEmpty ? _Status.missed : _Status.idle;
+        }
+      });
+      _pulseCtrl.stop();
+      _pulseCtrl.reset();
     });
   }
 
-  Future<void> _saveVoiceSettings() async {
-    final custom = _customPhraseController.text.trim();
-    final chosen = custom.isNotEmpty ? custom : _selectedPhrase;
-
-    final emergencyController = context.read<EmergencyController>();
-    await emergencyController.updateVoiceSettings(
-      enabled: _isListeningEnabled,
-      phrase: chosen,
-    );
-
+  void _showSnack(String msg, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Voice SOS updated: "$chosen"'),
-        backgroundColor: AppColors.success,
+        content: Text(msg),
+        backgroundColor: isError ? Colors.red.shade600 : Colors.green.shade600,
+        duration: const Duration(seconds: 3),
       ),
     );
-    Navigator.pop(context);
   }
+
+  Color get _statusColor {
+    switch (_status) {
+      case _Status.listening:
+        return _blue;
+      case _Status.detected:
+        return Colors.green.shade500;
+      case _Status.missed:
+        return Colors.orange.shade700;
+      case _Status.error:
+        return Colors.red.shade600;
+      case _Status.idle:
+        return Colors.grey.shade500;
+    }
+  }
+
+  String get _statusText {
+    switch (_status) {
+      case _Status.listening:
+        return _heardText.isEmpty
+            ? "Listening… say '$_wakeWord' or 'help me'"
+            : 'Hearing live: "$_heardText"';
+      case _Status.detected:
+        return '✅ DETECTED KEYWORD: "${_matchedKeyword ?? _wakeWord}"\nHeard: "$_heardText" — Pop-up notification sent!';
+      case _Status.missed:
+        return '❌ Heard: "$_heardText" — did not match "$_wakeWord". Try speaking clearly.';
+      case _Status.error:
+        return 'Microphone unavailable. Please check permissions and try again.';
+      case _Status.idle:
+        return 'Tap the microphone to test live keyword recognition.';
+    }
+  }
+
+  IconData get _micIcon =>
+      _isListening ? Icons.mic_rounded : Icons.mic_none_rounded;
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardColor = context.cardBg;
+    final textColor = context.textPrimary;
+    final subtextColor = context.textSecondary;
+    final borderColor = context.cardBorder;
+    final voiceService = VoiceActivationService.instance;
+
     return Scaffold(
       backgroundColor: context.scaffoldBg,
       appBar: AppBar(
-        title: Text('Voice SOS Configuration', style: TextStyle(color: context.textPrimary, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        title: Text(
+          'Voice Activation & Background SOS',
+          style: TextStyle(
+            color: textColor,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+          ),
+        ),
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: context.textPrimary, size: 20),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: textColor, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status Banner Card
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(12),
+            // ── Live Background Status Banner ───────────────────────────────
+            ValueListenableBuilder<bool>(
+              valueListenable: voiceService.isListeningNotifier,
+              builder: (context, active, _) {
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: (active || _isEnabled)
+                        ? const Color(0xFF10B981).withValues(alpha: 0.14)
+                        : Colors.orange.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: (active || _isEnabled)
+                          ? const Color(0xFF10B981).withValues(alpha: 0.5)
+                          : Colors.orange.withValues(alpha: 0.5),
                     ),
-                    child: const Icon(Icons.mic_rounded, color: Colors.white, size: 28),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
+                  child: Row(
+                    children: [
+                      Icon(
+                        (active || _isEnabled) ? Icons.graphic_eq_rounded : Icons.mic_off_rounded,
+                        color: (active || _isEnabled) ? const Color(0xFF10B981) : Colors.orange,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              (active || _isEnabled)
+                                  ? 'BACKGROUND VOICE GUARD ACTIVE'
+                                  : 'VOICE GUARD PAUSED',
+                              style: TextStyle(
+                                color: (active || _isEnabled)
+                                    ? const Color(0xFF10B981)
+                                    : Colors.orange,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                                letterSpacing: 0.6,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            ValueListenableBuilder<String>(
+                              valueListenable: voiceService.lastHeardWords,
+                              builder: (context, lastHeard, _) {
+                                return Text(
+                                  lastHeard.isNotEmpty
+                                      ? 'Last heard: "$lastHeard"'
+                                      : 'Listening for "$_wakeWord", "help me", "nisaidie", "piga polisi"…',
+                                  style: TextStyle(color: textColor, fontSize: 12),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // ── Recent Detected Keyword Banner ──────────────────────────────
+            ValueListenableBuilder<String?>(
+              valueListenable: voiceService.lastDetectedKeyword,
+              builder: (context, detectedKw, _) {
+                if (detectedKw == null || detectedKw.isEmpty) {
+                  return const SizedBox.shrink();
+                }
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFF059669).withValues(alpha: 0.22),
+                        const Color(0xFF10B981).withValues(alpha: 0.10),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF10B981), width: 1.4),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.verified_rounded, color: Color(0xFF10B981), size: 26),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'KEYWORD DETECTED & NOTIFIED',
+                              style: TextStyle(
+                                color: Color(0xFF10B981),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                                letterSpacing: 0.7,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Matched phrase: "$detectedKw"',
+                              style: TextStyle(
+                                color: textColor,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          voiceService.lastDetectedKeyword.value = null;
+                        },
+                        child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+
+            // ── Enable toggle card ──────────────────────────────────────────
+            _card(
+              cardColor: cardColor,
+              borderColor: borderColor,
+              child: SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  'Enable Voice Activation (Foreground & Background)',
+                  style: TextStyle(
+                    color: textColor,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Continuously listens for your emergency keywords even when the app is minimized or screen is locked, and pops up an instant notification when detected.',
+                    style: TextStyle(color: subtextColor, fontSize: 12.5),
+                  ),
+                ),
+                value: _isEnabled,
+                activeTrackColor: _blue,
+                activeThumbColor: Colors.white,
+                onChanged: (v) {
+                  setState(() => _isEnabled = v);
+                  _saveSettings();
+                },
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // ── Wake word config card ───────────────────────────────────────
+            _sectionLabel('WAKE WORD & SUPPORTED KEYWORDS', subtextColor),
+            _card(
+              cardColor: cardColor,
+              borderColor: borderColor,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select a preset phrase below or type your own custom phrase. Built-in emergency phrases ("tuma msaada", "nisaidie", "piga polisi", "help me", "emergency", "call police") are also always recognized.',
+                    style: TextStyle(color: subtextColor, fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Kiswahili + English Dual Mode info box
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1B382B) : const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? const Color(0xFF2E7D32) : const Color(0xFF81C784),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Multilingual Speech AI',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Powered by on-device and backend multilingual Whisper model (English & Kiswahili).',
-                          style: TextStyle(fontSize: 12, color: context.textSecondary),
+                        const Text('🇰🇪 ', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Bilingual Phonetic Engine Active: Recognizes both Kiswahili '
+                            '("tuma msaada", "nisaidie", "kujeni hapa", "piga polisi") and English '
+                            '("help me", "send help", "emergency") automatically without switching phone language.',
+                            style: TextStyle(
+                              color: isDark ? const Color(0xFFA5D6A7) : const Color(0xFF2E7D32),
+                              fontSize: 12,
+                              height: 1.45,
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 14),
+
+                  // Preset chips
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _suggestedPhrases.map((item) {
+                      final isSelected =
+                          _wakeWordCtrl.text.trim().toLowerCase() == item['phrase']!.toLowerCase();
+                      return ChoiceChip(
+                        label: Text(item['label']!),
+                        selected: isSelected,
+                        selectedColor: _blue.withValues(alpha: 0.2),
+                        backgroundColor: context.surfaceBg,
+                        labelStyle: TextStyle(
+                          color: isSelected ? _blue : textColor,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 12,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          side: BorderSide(
+                            color: isSelected ? _blue : borderColor,
+                          ),
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _wakeWordCtrl.text = item['phrase']!;
+                              _wakeWord = item['phrase']!;
+                            });
+                            _saveSettings();
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 14),
+
+                  TextField(
+                    controller: _wakeWordCtrl,
+                    style: TextStyle(color: textColor, fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: 'e.g. tuma msaada, nisaidie, help me',
+                      hintStyle: TextStyle(
+                        color: subtextColor.withValues(alpha: 0.7),
+                        fontSize: 14,
+                      ),
+                      prefixIcon: const Icon(
+                        Icons.record_voice_over_rounded,
+                        color: _blue,
+                      ),
+                      filled: true,
+                      fillColor: context.inputBg,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: borderColor),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: _blue, width: 1.5),
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _wakeWord = v.trim()),
+                  ),
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: _saveSettings,
+                    child: Container(
+                      width: double.infinity,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: _blue,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          'Save Wake Word',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
 
-            // Enable Toggle Switch
-            Card(
-              color: context.cardBg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: SwitchListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                title: Text(
-                  'Continuous Voice Detection',
-                  style: TextStyle(fontWeight: FontWeight.w600, color: context.textPrimary),
-                ),
-                subtitle: Text(
-                  'Listens for your trigger phrase even in background or locked screen',
-                  style: TextStyle(fontSize: 12, color: context.textSecondary),
-                ),
-                value: _isListeningEnabled,
-                activeTrackColor: AppColors.primary,
-                onChanged: (val) {
-                  setState(() => _isListeningEnabled = val);
-                },
-              ),
-            ),
             const SizedBox(height: 20),
 
-            // Select Phrase Section
-            Text(
-              'Select or Customize Your Emergency Phrase',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: context.textPrimary),
-            ),
-            const SizedBox(height: 12),
-
-            // Preset options
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _suggestedPhrases.map((item) {
-                final isSelected = _selectedPhrase.toLowerCase() == item['phrase']!.toLowerCase() &&
-                    _customPhraseController.text.toLowerCase() == item['phrase']!.toLowerCase();
-                return ChoiceChip(
-                  label: Text(item['label']!),
-                  selected: isSelected,
-                  selectedColor: AppColors.primary.withValues(alpha: 0.2),
-                  backgroundColor: context.surfaceBg,
-                  labelStyle: TextStyle(
-                    color: isSelected ? AppColors.primary : context.textPrimary,
-                    fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 13,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    side: BorderSide(
-                      color: isSelected ? AppColors.primary : context.cardBorder,
-                    ),
-                  ),
-                  onSelected: (selected) {
-                    if (selected) {
-                      setState(() {
-                        _selectedPhrase = item['phrase']!;
-                        _customPhraseController.text = item['phrase']!;
-                      });
-                    }
-                  },
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 16),
-
-            // Custom Phrase Input Field
-            TextField(
-              controller: _customPhraseController,
-              style: TextStyle(color: context.textPrimary),
-              decoration: InputDecoration(
-                labelText: 'Custom Emergency Phrase',
-                labelStyle: TextStyle(color: context.textSecondary),
-                hintText: 'e.g. tuma msaada haraka, save me now',
-                hintStyle: TextStyle(color: context.textMuted),
-                prefixIcon: const Icon(Icons.record_voice_over_rounded, color: AppColors.primary),
-                suffixIcon: IconButton(
-                  icon: Icon(Icons.clear_rounded, color: context.textSecondary),
-                  onPressed: () => _customPhraseController.clear(),
-                ),
-                filled: true,
-                fillColor: context.surfaceBg,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: context.cardBorder)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-              ),
-              onChanged: (val) {
-                setState(() => _selectedPhrase = val);
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Interactive Voice Testing Section
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: context.surfaceBg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: context.cardBorder),
-              ),
+            // ── Test detection card ─────────────────────────────────────────
+            _sectionLabel('TEST LIVE VOICE DETECTION', subtextColor),
+            _card(
+              cardColor: cardColor,
+              borderColor: borderColor,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.hearing_rounded, color: AppColors.primary, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Test With Your Voice',
-                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: context.textPrimary),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
                   Text(
-                    'Speak your chosen phrase for 4 seconds to test how the AI model recognizes your voice and dialect.',
-                    style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                    'Tap the microphone and speak your wake phrase ("$_wakeWord" or "help me").\nYou will see your words transcribed live and receive an instant notification when matched.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: subtextColor, fontSize: 13),
                   ),
+
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      'Also launch 10s SOS Countdown when test phrase matches',
+                      style: TextStyle(color: textColor, fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    value: _triggerSosOnTestMatch,
+                    activeTrackColor: _blue,
+                    onChanged: (val) => setState(() => _triggerSosOnTestMatch = val),
+                  ),
+
                   const SizedBox(height: 16),
 
-                  ElevatedButton.icon(
-                    onPressed: _isTesting ? null : _testVoiceWithModel,
-                    icon: _isTesting
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Icon(Icons.mic_external_on_rounded, color: Colors.white),
-                    label: Text(
-                      _isTesting
-                          ? 'Recording... ($_countdownSeconds s left)'
-                          : 'Record & Test Recognition',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _isTesting ? AppColors.sosRed : AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Live Typing Indicator while testing
-                  if (_isTesting) ...[
-                    Container(
-                      margin: const EdgeInsets.only(top: 4, bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.primary.withValues(alpha: 0.4)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.graphic_eq_rounded, color: AppColors.primary, size: 20),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              _liveHearingText,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  // Simulation Button for Instant Verification
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      _voiceService.simulateVoiceDetected();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Simulated Voice SOS alert triggered!'),
-                          backgroundColor: AppColors.primary,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.flash_on_rounded, size: 18, color: AppColors.primary),
-                    label: const Text(
-                      'Test Full Emergency Flow (Simulate Trigger)',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: AppColors.primary.withValues(alpha: 0.5)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-
-                  // Live Speech Monitor: Types what is heard continuously
-                  ValueListenableBuilder<String>(
-                    valueListenable: _voiceService.lastHeardWords,
-                    builder: (context, words, _) {
-                      return Container(
-                        margin: const EdgeInsets.only(top: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: context.inputBg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: words.isNotEmpty
-                                ? AppColors.success.withValues(alpha: 0.6)
-                                : context.cardBorder,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              words.isNotEmpty ? Icons.record_voice_over_rounded : Icons.mic_none_rounded,
-                              color: words.isNotEmpty ? AppColors.success : context.textSecondary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    words.isNotEmpty ? 'What was just heard:' : 'Speech Engine Status:',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: words.isNotEmpty ? AppColors.success : context.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    words.isNotEmpty ? '"$words"' : 'Listening actively for keywords...',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontStyle: words.isNotEmpty ? FontStyle.italic : FontStyle.normal,
-                                      color: words.isNotEmpty ? context.textPrimary : context.textSecondary,
-                                      fontWeight: words.isNotEmpty ? FontWeight.w600 : FontWeight.normal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-
-                  if (_testResultText != null) ...[
-                    const SizedBox(height: 16),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: _testResultMatched == true
-                            ? AppColors.success.withValues(alpha: 0.12)
-                            : AppColors.sosRed.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: _testResultMatched == true ? AppColors.success : AppColors.sosRed,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                _testResultMatched == true ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
-                                color: _testResultMatched == true ? AppColors.success : AppColors.sosRed,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _testResultMatched == true
-                                    ? 'Recognition Matched & Verified!'
-                                    : 'Phrase Not Recognized',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: _testResultMatched == true ? AppColors.success : AppColors.sosRed,
-                                ),
+                  // Mic button with pulse animation
+                  GestureDetector(
+                    onTap: _toggleListening,
+                    child: AnimatedBuilder(
+                      animation: _pulseAnim,
+                      builder: (context, _) => Transform.scale(
+                        scale: _isListening ? _pulseAnim.value : 1.0,
+                        child: Container(
+                          width: 88,
+                          height: 88,
+                          decoration: BoxDecoration(
+                            color: _isListening
+                                ? Colors.red
+                                : (_status == _Status.detected ? Colors.green.shade600 : _blue),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_isListening ? Colors.red : _blue).withValues(alpha: 0.35),
+                                blurRadius: 18,
+                                spreadRadius: 4,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Model Heard: "${_testResultText!}"',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                          ),
-                          if (_testResultMatched != true) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              'Tip: Speak closer to phone mic. Model matches "${_customPhraseController.text.trim()}".',
-                              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                            ),
-                          ],
-                        ],
+                          child: Icon(_micIcon, color: Colors.white, size: 40),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Status text
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _statusColor.withValues(alpha: 0.4)),
+                    ),
+                    child: Text(
+                      _statusText,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _statusColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                  ),
+
+                  if (_confidence > 0 && _status != _Status.listening) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: context.surfaceBg,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: borderColor),
+                      ),
+                      child: Text(
+                        'Recognition Confidence: ${(_confidence * 100).toStringAsFixed(1)}%',
+                        style: TextStyle(color: subtextColor, fontSize: 12.5, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ],
+
+                  const SizedBox(height: 16),
+
+                  // Instant Trigger Simulation (Tests pop-up notification & full flow)
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      VoiceActivationService.instance.simulateVoiceDetected(
+                        simulatedPhrase: _wakeWord,
+                      );
+                      setState(() {
+                        _heardText = _wakeWord;
+                        _matchedKeyword = _wakeWord;
+                        _confidence = 0.99;
+                        _status = _Status.detected;
+                      });
+                    },
+                    icon: const Icon(Icons.flash_on_rounded, size: 18, color: _blue),
+                    label: const Text(
+                      'Simulate Voice Keyword Detection & Pop-Up Alert',
+                      style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: _blue),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: _blue.withValues(alpha: 0.5)),
+                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                 ],
               ),
             ),
-            const SizedBox(height: 28),
 
-            // Save Configuration Button
-            ElevatedButton(
-              onPressed: _saveVoiceSettings,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              ),
-              child: const Text(
-                'Save Voice Activation Settings',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+            const SizedBox(height: 20),
+
+            // ── How it works card ───────────────────────────────────────────
+            _sectionLabel('HOW IT WORKS', subtextColor),
+            _card(
+              cardColor: cardColor,
+              borderColor: borderColor,
+              child: Column(
+                children: [
+                  _howItWorksRow(
+                    Icons.mic_rounded,
+                    'Continuous foreground service keeps the microphone active both inside the app and in the background.',
+                    '1',
+                    textColor,
+                  ),
+                  const SizedBox(height: 14),
+                  _howItWorksRow(
+                    Icons.notifications_active_rounded,
+                    'As soon as a keyword is recognized, SafeLink displays the detected phrase and fires a high-priority pop-up notification.',
+                    '2',
+                    textColor,
+                  ),
+                  const SizedBox(height: 14),
+                  _howItWorksRow(
+                    Icons.send_rounded,
+                    'Live 3D GPS tracking, SMS to emergency contacts, and BLE/Cloud Community Responder alerts are dispatched.',
+                    '3',
+                    textColor,
+                  ),
+                ],
               ),
             ),
+
+            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
+
+  Widget _card({
+    required Widget child,
+    required Color cardColor,
+    required Color borderColor,
+  }) =>
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderColor, width: 1.3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: child,
+      );
+
+  Widget _sectionLabel(String text, Color color) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Text(
+          text,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: color.withValues(alpha: 0.8),
+            letterSpacing: 0.9,
+          ),
+        ),
+      );
+
+  Widget _howItWorksRow(IconData icon, String label, String step, Color textColor) => Row(
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: _blue.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                step,
+                style: const TextStyle(
+                  color: _blue,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Icon(icon, color: _blue, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: textColor, fontSize: 13),
+            ),
+          ),
+        ],
+      );
 }
+
+enum _Status { idle, listening, detected, missed, error }

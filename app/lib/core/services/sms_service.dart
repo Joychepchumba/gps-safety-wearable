@@ -87,9 +87,11 @@ class SmsService {
         ? '$baseUrl/alert/track/$panicEventId'
         : '$baseUrl/alert/track/live?lat=$lat&lng=$lng&name=${Uri.encodeComponent(userName)}';
 
+    final googleMapsLink = 'https://maps.google.com/?q=${lat.toStringAsFixed(5)},${lng.toStringAsFixed(5)}';
     final message = '🚨 EMERGENCY ALERT: $userName triggered an SOS panic alarm!\n'
         'Location: Lat ${lat.toStringAsFixed(5)}, Lng ${lng.toStringAsFixed(5)}\n'
-        'Live 3D Tracking: $trackUrl';
+        'Live 3D Tracking: $trackUrl\n'
+        'Google Maps: $googleMapsLink';
 
     final allPhones = List<String>.from(phones);
     if (!allPhones.contains(AppConstants.policeNumber)) {

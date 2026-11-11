@@ -59,7 +59,7 @@ Future<void> setupServiceLocator() async {
     sl.registerFactory(() => MapController());
   }
   if (!sl.isRegistered<WearableController>()) {
-    sl.registerFactory(() => WearableController());
+    sl.registerLazySingleton(() => WearableController());
   }
   if (!sl.isRegistered<AlertController>()) {
     sl.registerFactory(() => AlertController());

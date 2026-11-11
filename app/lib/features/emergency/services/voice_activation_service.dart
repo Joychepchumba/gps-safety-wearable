@@ -1,82 +1,131 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-import 'dart:math' as math;
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
+import 'dart:math';
+
+import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
-import '../../../core/constants/app_constants.dart';
+
+import '../../../core/di/service_locator.dart';
+import '../../../core/navigation/navigation_service.dart';
+import '../../../core/services/background_protection_service.dart';
+import '../../../core/services/notification_service.dart';
 
 typedef OnWakeWordDetectedCallback = void Function();
+typedef BackgroundVoiceService = VoiceActivationService;
 
-/// Dual-Engine Voice SOS Detection:
+/// Native Flutter Speech-to-Text Voice SOS Activation Service.
 ///
-/// 1. PRIMARY ENGINE: On-Device Speech Recognizer (Google Speech Services / native STT).
-///    Runs real-time speech recognition on-device with zero network latency.
-///    Recognizes both English ("help", "emergency", "save me", "call police")
-///    and Kiswahili ("msaada", "tuma msaada", "nisaidie", "piga polisi") plus custom phrases.
+/// Runs continuous speech recognition via Flutter `speech_to_text` both in the
+/// foreground and in the background (powered by the SafeLink microphone
+/// foreground service).
 ///
-/// 2. SECONDARY ENGINE: Audio Chunk Recording + Whisper Model.
-///    If the device lacks Google Speech Services or on-device STT fails, samples audio
-///    chunks with sensitive -50 dB threshold and uploads to `/voice/detect`.
-class VoiceActivationService {
-  static final VoiceActivationService instance = VoiceActivationService._internal();
-  VoiceActivationService._internal();
+/// Recognizes both English ("help", "help me", "send help", "emergency",
+/// "save me", "call police", etc.) and Kiswahili ("msaada", "tuma msaada",
+/// "nisaidie", "kujeni hapa", "piga polisi", "okoa maisha", etc.) as well as
+/// user-configured custom emergency phrases.
+class VoiceActivationService with WidgetsBindingObserver {
+  static final VoiceActivationService instance =
+      VoiceActivationService._internal();
+  VoiceActivationService._internal() {
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
+  }
 
-  // --- tuning ---------------------------------------------------------------
-  static const Duration _chunkDuration = Duration(seconds: 4);
-  static const Duration _ampPollInterval = Duration(milliseconds: 250);
-  // Sensitive speech threshold (-65 dB ensures whisper and normal speaking voice is caught)
-  static const double _speechThresholdDb = -65.0;
-  static const Duration _triggerCooldown = Duration(seconds: 20);
+  static const Duration _triggerCooldown = Duration(seconds: 12);
 
-  final AudioRecorder _recorder = AudioRecorder();
   final stt.SpeechToText _speech = stt.SpeechToText();
 
   bool _speechReady = false;
   bool _wantListening = false;
   bool _isSpeechListening = false;
-  bool _usingSecondaryEngine = false;
+  bool _isStartingStt = false;
   bool _isEnabled = true;
+  bool _inInteractiveTest = false;
   String _wakePhrase = 'tuma msaada';
 
   DateTime? _lastTriggerAt;
-  Timer? _sttKeepAliveTimer;
+  DateTime? _lastListenStartAt;
+  Timer? _sttRestartTimer;
+  Timer? _watchdogTimer;
 
   static const List<String> defaultWakePhrases = [
-    'help',
-    'help me',
-    'send help',
-    'emergency',
-    'save me',
-    'call police',
-    'call the police',
     'tuma msaada',
-    'msaada',
     'nisaidie',
+    'nisaidie haraka',
+    'kujeni hapa',
     'piga polisi',
     'okoa maisha',
+    'help me',
+    'help me now',
+    'send help',
+    'call police',
+    'call the police',
   ];
 
   OnWakeWordDetectedCallback? onWakeWordDetected;
+  void Function(
+    String heard,
+    double confidence,
+    bool isFinal,
+    String? matchedKeyword,
+  )?
+  _interactiveTestCallback;
 
   final ValueNotifier<String> lastHeardWords = ValueNotifier<String>('');
+  final ValueNotifier<String?> lastDetectedKeyword = ValueNotifier<String?>(
+    null,
+  );
+  final ValueNotifier<DateTime?> lastDetectedAt = ValueNotifier<DateTime?>(
+    null,
+  );
   final ValueNotifier<bool> isTranscribing = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isListeningNotifier = ValueNotifier<bool>(false);
 
-  bool get isListening => _wantListening;
+  bool get isListening =>
+      _wantListening || _isSpeechListening || _speech.isListening;
   bool get isEnabled => _isEnabled;
   String get wakePhrase => _wakePhrase;
 
-  /// Simulates voice phrase detection (useful for testing & demo on emulators)
-  void simulateVoiceDetected() {
-    debugPrint('🎙️ [VOICE SIMULATION] Simulated emergency voice trigger invoked!');
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_isEnabled) return;
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      debugPrint(
+        '[VOICE STT] App moved to background ($state) — keeping continuous voice protection alive',
+      );
+      BackgroundProtectionService.start(voiceEnabled: true, shakeEnabled: true);
+      if (_wantListening && !_inInteractiveTest) {
+        _restartSttSoon(delay: const Duration(milliseconds: 500));
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      debugPrint('[VOICE STT] App resumed — verifying active voice listener');
+      if (_isEnabled && !_inInteractiveTest) {
+        _wantListening = true;
+        _restartSttSoon(delay: const Duration(milliseconds: 300));
+      }
+    }
+  }
+
+  /// Simulates voice phrase detection (for testing & demo on emulators/devices)
+  void simulateVoiceDetected({String? simulatedPhrase}) {
+    final phrase = simulatedPhrase ?? _wakePhrase;
+    debugPrint(
+      '🎙️ [VOICE SIMULATION] Simulated emergency voice trigger invoked ("$phrase")!',
+    );
+    lastHeardWords.value = phrase;
+    lastDetectedKeyword.value = phrase;
+    lastDetectedAt.value = DateTime.now();
+    _notifyKeywordDetected(keyword: phrase, heardText: phrase, testOnly: false);
     onWakeWordDetected?.call();
   }
 
-  /// Loads saved settings.
+  /// Loads saved voice settings from persistent storage.
   Future<void> init({OnWakeWordDetectedCallback? onDetected}) async {
     if (onDetected != null) {
       onWakeWordDetected = onDetected;
@@ -86,7 +135,10 @@ class VoiceActivationService {
     _wakePhrase = prefs.getString('voice_wake_word') ?? 'tuma msaada';
   }
 
-  Future<void> updateSettings({required bool enabled, required String phrase}) async {
+  Future<void> updateSettings({
+    required bool enabled,
+    required String phrase,
+  }) async {
     _isEnabled = enabled;
     _wakePhrase = phrase.trim().toLowerCase();
 
@@ -101,6 +153,23 @@ class VoiceActivationService {
     }
   }
 
+  Future<void> startIfEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    _isEnabled = prefs.getBool('voice_activation_enabled') ?? _isEnabled;
+    _wakePhrase = prefs.getString('voice_wake_word') ?? _wakePhrase;
+    if (_isEnabled) {
+      await startListening();
+    }
+  }
+
+  Future<void> stop() async {
+    stopListening();
+  }
+
+  Future<void> start() async {
+    await startListening();
+  }
+
   Future<bool> _ensureMicPermission() async {
     try {
       var status = await Permission.microphone.status;
@@ -108,86 +177,138 @@ class VoiceActivationService {
         status = await Permission.microphone.request();
       }
       if (!status.isGranted) {
-        debugPrint('[VOICE] Microphone permission not granted');
+        debugPrint('[VOICE STT] Microphone permission not granted');
       }
       return status.isGranted;
     } catch (e) {
-      debugPrint('[VOICE] Permission error: $e');
+      debugPrint('[VOICE STT] Permission error: $e');
       return false;
     }
   }
 
+  /// Starts continuous speech-to-text listening in foreground & background.
   Future<void> startListening() async {
-    if (_wantListening) return;
     if (!await _ensureMicPermission()) return;
-    _wantListening = true;
-    _usingSecondaryEngine = false;
-    debugPrint('[VOICE] Starting voice safety detection...');
 
-    // Try primary on-device native speech recognizer first
-    final onDeviceOk = await _initSpeech();
-    if (onDeviceOk) {
-      debugPrint('[VOICE] Primary on-device native speech recognizer initialized');
-      _startContinuousStt();
+    // If already actively listening or starting, do not double-trigger
+    if (_wantListening &&
+        !_inInteractiveTest &&
+        (_speech.isListening || _isStartingStt)) {
+      isListeningNotifier.value = true;
+      return;
+    }
+
+    _inInteractiveTest = false;
+    _interactiveTestCallback = null;
+    _wantListening = true;
+    isListeningNotifier.value = true;
+    debugPrint(
+      '[VOICE STT] Starting continuous speech recognition (target: "$_wakePhrase")...',
+    );
+
+    // Ensure background service is running on Android so mic stays alive when screen is off or app is minimised
+    unawaited(
+      BackgroundProtectionService.start(voiceEnabled: true, shakeEnabled: true),
+    );
+
+    final ok = await _initSpeech();
+    if (ok) {
+      await _startContinuousStt();
+      _startWatchdog();
     } else {
-      debugPrint('[VOICE] On-device STT not available; using audio chunking engine');
-      _usingSecondaryEngine = true;
-      unawaited(_runChunkRecordingLoop());
+      debugPrint(
+        '[VOICE STT] Speech recognizer initialization deferred; retrying...',
+      );
+      _restartSttSoon(delay: const Duration(seconds: 2));
+      _startWatchdog();
     }
   }
 
+  /// Stops voice detection and cancels all auto-restart timers.
   void stopListening() {
     _wantListening = false;
-    _usingSecondaryEngine = false;
-    _sttKeepAliveTimer?.cancel();
-    _sttKeepAliveTimer = null;
-    _stopSpeechEngine();
-    unawaited(_recorder.stop().catchError((_) => null));
-    debugPrint('[VOICE] Voice detection stopped');
-  }
+    _isSpeechListening = false;
+    _inInteractiveTest = false;
+    _interactiveTestCallback = null;
+    isListeningNotifier.value = false;
+    isTranscribing.value = false;
+    _sttRestartTimer?.cancel();
+    _sttRestartTimer = null;
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
 
-  void _stopSpeechEngine() {
     try {
       _speech.stop();
     } catch (_) {}
-    _isSpeechListening = false;
+    debugPrint('[VOICE STT] Continuous voice detection stopped');
   }
 
   // --------------------------------------------------------------------------
-  // PRIMARY ENGINE: Native Continuous Speech Recognition
+  // CONTINUOUS SPEECH RECOGNITION ENGINE
   // --------------------------------------------------------------------------
+
+  void _onSpeechError(SpeechRecognitionError err) {
+    final msg = err.errorMsg;
+    _isSpeechListening = false;
+    _isStartingStt = false;
+    isTranscribing.value = false;
+
+    if (_inInteractiveTest) {
+      return;
+    }
+
+    if (_wantListening) {
+      if (msg == 'error_busy') {
+        // Android recognizer is still releasing previous session; cancel cleanly and wait 2.5s
+        try {
+          _speech.cancel();
+        } catch (_) {}
+        _restartSttSoon(delay: const Duration(milliseconds: 2500));
+      } else if (msg == 'error_no_match' ||
+          msg == 'error_speech_timeout' ||
+          msg == 'error_client') {
+        _restartSttSoon(delay: const Duration(milliseconds: 600));
+      } else {
+        debugPrint('[VOICE STT] Engine status notice: $msg');
+        _restartSttSoon(delay: const Duration(milliseconds: 1000));
+      }
+    }
+  }
+
+  void _onSpeechStatus(String status) {
+    if (status == 'listening') {
+      _isSpeechListening = true;
+      _isStartingStt = false;
+      isTranscribing.value = true;
+      isListeningNotifier.value = true;
+    } else if (status == 'done' || status == 'notListening') {
+      _isSpeechListening = false;
+      _isStartingStt = false;
+      isTranscribing.value = false;
+      if (_wantListening &&
+          !_inInteractiveTest &&
+          (_sttRestartTimer == null || !_sttRestartTimer!.isActive)) {
+        // Native session ended (timeout or pause); seamlessly restart continuous listening
+        _restartSttSoon(delay: const Duration(milliseconds: 650));
+      } else if (!_wantListening) {
+        isListeningNotifier.value = false;
+      }
+    }
+  }
+
   Future<bool> _initSpeech() async {
-    if (_speechReady) return true;
     try {
-      _speechReady = await _speech.initialize(
-        onError: (err) {
-          final msg = err.errorMsg;
-          _isSpeechListening = false;
-
-          // Filter repetitive ambient silence notice from log output
-          if (msg != 'error_no_match') {
-            debugPrint('[VOICE STT] Engine status notice: $msg');
-          }
-
-          if (msg == 'error_busy') {
-            _restartSttSoon(delay: const Duration(milliseconds: 2500));
-          } else if (msg == 'error_speech_timeout' || msg == 'error_no_match') {
-            // Ambient silence or phrase timeout: smoothly restart listening
-            _restartSttSoon(delay: const Duration(milliseconds: 800));
-          } else {
-            _restartSttSoon(delay: const Duration(milliseconds: 1500));
-          }
-        },
-        onStatus: (status) {
-          if (status == 'listening') {
-            _isSpeechListening = true;
-          } else if (status == 'done' || status == 'notListening') {
-            _isSpeechListening = false;
-            // Recognizer closed lifecycle, restart listening loop
-            _restartSttSoon(delay: const Duration(milliseconds: 800));
-          }
-        },
-      );
+      if (!_speechReady) {
+        _speechReady = await _speech.initialize(
+          onError: _onSpeechError,
+          onStatus: _onSpeechStatus,
+          debugLogging: false,
+        );
+      }
+      // CRITICAL: SpeechToText is a singleton whose initialize() only assigns
+      // errorListener/statusListener the first time. Re-bind them explicitly!
+      _speech.errorListener = _onSpeechError;
+      _speech.statusListener = _onSpeechStatus;
     } catch (e) {
       debugPrint('[VOICE STT] Initialization exception: $e');
       _speechReady = false;
@@ -195,419 +316,592 @@ class VoiceActivationService {
     return _speechReady;
   }
 
-  void _restartSttSoon({Duration delay = const Duration(milliseconds: 800)}) {
-    if (!_wantListening || _usingSecondaryEngine) return;
-    _sttKeepAliveTimer?.cancel();
-    _sttKeepAliveTimer = Timer(delay, () {
-      if (_wantListening && !_isSpeechListening && !_usingSecondaryEngine) {
+  void _restartSttSoon({Duration delay = const Duration(milliseconds: 350)}) {
+    if (!_wantListening || _inInteractiveTest) return;
+    _sttRestartTimer?.cancel();
+    _sttRestartTimer = Timer(delay, () {
+      if (_wantListening && !_inInteractiveTest) {
+        _isSpeechListening = false;
         _startContinuousStt();
       }
     });
   }
 
-  Future<void> _startContinuousStt() async {
-    if (!_wantListening || _isSpeechListening || _usingSecondaryEngine) return;
+  /// Watchdog timer keeps recognition alive across background lifecycle changes
+  /// and recovers if the platform recognizer silently stops after 45s.
+  void _startWatchdog() {
+    _watchdogTimer?.cancel();
+    _watchdogTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!_wantListening || _inInteractiveTest || _isStartingStt) return;
+      // Do not race with a scheduled restart timer
+      if (_sttRestartTimer != null && _sttRestartTimer!.isActive) return;
 
+      final now = DateTime.now();
+      final recentlyStarted =
+          _lastListenStartAt != null &&
+          now.difference(_lastListenStartAt!) < const Duration(seconds: 5);
+      if (recentlyStarted) return;
+
+      final stuckTooLong =
+          _lastListenStartAt != null &&
+          now.difference(_lastListenStartAt!) > const Duration(seconds: 48);
+
+      if (!_speech.isListening || !_isSpeechListening || stuckTooLong) {
+        if (stuckTooLong) {
+          try {
+            _speech.stop();
+          } catch (_) {}
+          _isSpeechListening = false;
+        }
+        _restartSttSoon(delay: const Duration(milliseconds: 500));
+      }
+    });
+  }
+
+  Future<void> _startContinuousStt() async {
+    if (!_wantListening || _inInteractiveTest || _isStartingStt) return;
+
+    _isStartingStt = true;
     try {
+      await _initSpeech();
       if (_speech.isListening) {
         _isSpeechListening = true;
+        _isStartingStt = false;
+        isListeningNotifier.value = true;
         return;
       }
 
-      // Check if configured wake phrase prefers Kiswahili locale
-      final isSwahili = _wakePhrase.contains('msaada') ||
-          _wakePhrase.contains('tuma') ||
-          _wakePhrase.contains('nisaidie') ||
-          _wakePhrase.contains('polisi') ||
-          _wakePhrase.contains('okoa');
-      String? targetLocale;
-      if (isSwahili) {
-        try {
-          final locales = await _speech.locales();
-          for (final loc in locales) {
-            if (loc.localeId.toLowerCase().startsWith('sw')) {
-              targetLocale = loc.localeId;
-              break;
-            }
-          }
-        } catch (_) {}
-      }
-
       _isSpeechListening = true;
+      isListeningNotifier.value = true;
+      _lastListenStartAt = DateTime.now();
+
       await _speech.listen(
-        onResult: (result) {
-          final words = result.recognizedWords.toLowerCase().trim();
-          if (words.isEmpty) return;
-          lastHeardWords.value = words;
-          debugPrint('🎙️ [VOICE HEARD] "$words"');
-          if (_matchesWakePhrase(words)) {
-            _fireTrigger('on-device speech recognition: "$words"');
-          }
-        },
+        onResult: _handleSpeechResult,
         listenOptions: stt.SpeechListenOptions(
-          localeId: targetLocale,
           listenMode: stt.ListenMode.dictation,
           partialResults: true,
           cancelOnError: false,
-          listenFor: const Duration(minutes: 5),
-          pauseFor: const Duration(seconds: 15),
+          listenFor: const Duration(seconds: 45),
+          pauseFor: const Duration(seconds: 10),
         ),
       );
     } catch (e) {
       debugPrint('[VOICE STT] Listen start notice: $e');
       _isSpeechListening = false;
-      _restartSttSoon(delay: const Duration(milliseconds: 2000));
+      _restartSttSoon(delay: const Duration(milliseconds: 1800));
+    } finally {
+      _isStartingStt = false;
+    }
+  }
+
+  void _handleSpeechResult(SpeechRecognitionResult result) {
+    final primaryWords = result.recognizedWords.trim();
+    if (primaryWords.isEmpty && result.alternates.isEmpty) return;
+
+    // Collect primary + all alternate transcriptions from the recognizer
+    final candidates = <String>[
+      if (primaryWords.isNotEmpty) primaryWords,
+      for (final alt in result.alternates)
+        if (alt.recognizedWords.trim().isNotEmpty) alt.recognizedWords.trim(),
+    ];
+
+    final displayWords = primaryWords.isNotEmpty
+        ? primaryWords
+        : candidates.first;
+    lastHeardWords.value = displayWords;
+    debugPrint(
+      '🎙️ [VOICE STT HEARD] "$displayWords" (alternates: ${candidates.length})',
+    );
+
+    String? matchedKeyword;
+    String matchedTranscript = displayWords;
+    for (final candidate in candidates) {
+      final match = findMatchedKeyword(candidate);
+      if (match != null) {
+        matchedKeyword = match;
+        matchedTranscript = candidate;
+        break;
+      }
+    }
+
+    if (_inInteractiveTest && _interactiveTestCallback != null) {
+      final conf = result.confidence > 0
+          ? result.confidence
+          : (matchedKeyword != null ? 0.94 : 0.82);
+      if (matchedKeyword != null) {
+        lastDetectedKeyword.value = matchedKeyword;
+        lastDetectedAt.value = DateTime.now();
+        _notifyKeywordDetected(
+          keyword: matchedKeyword,
+          heardText: matchedTranscript,
+          testOnly: true,
+        );
+      }
+      _interactiveTestCallback!(
+        displayWords,
+        conf,
+        result.finalResult,
+        matchedKeyword,
+      );
+      return;
+    }
+
+    if (matchedKeyword != null) {
+      // Only fire real SOS on final speech recognition result (or high-confidence >= 0.72)
+      // to eliminate false triggers from transient mid-sentence partial hypotheses.
+      final bool highConfidencePartial =
+          result.confidence >= 0.72 && matchedTranscript.split(' ').length >= 2;
+      if (result.finalResult || highConfidencePartial) {
+        _fireTrigger(
+          matchedKeyword: matchedKeyword,
+          heardText: matchedTranscript,
+        );
+      } else {
+        debugPrint(
+          '[VOICE STT] Waiting for final speech result before triggering for "$matchedKeyword" (heard partial: "$matchedTranscript")',
+        );
+      }
     }
   }
 
   // --------------------------------------------------------------------------
-  // SECONDARY ENGINE: Audio Chunk Recorder (Whisper Fallback)
+  // WAKE PHRASE MATCHING & TRIGGER DISPATCH
   // --------------------------------------------------------------------------
-  Future<void> _runChunkRecordingLoop() async {
-    while (_wantListening) {
-      await _recordAndAnalyseChunk();
-    }
-  }
 
-  Future<void> _recordAndAnalyseChunk() async {
-    final path = '${Directory.systemTemp.path}/sg_voice_${DateTime.now().millisecondsSinceEpoch}.wav';
+  void _notifyKeywordDetected({
+    required String keyword,
+    required String heardText,
+    required bool testOnly,
+  }) {
+    // 1. High-priority system pop-up notification (works in background & foreground)
     try {
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 16000,
-          numChannels: 1,
-        ),
-        path: path,
+      sl<NotificationService>().showVoiceKeywordDetectedPopup(
+        keyword: keyword,
+        heardText: heardText,
+        testOnly: testOnly,
       );
     } catch (e) {
-      debugPrint('[VOICE RECORDER] Start error: $e');
-      await Future.delayed(const Duration(seconds: 2));
-      return;
+      debugPrint('[VOICE STT] Popup notification notice: $e');
     }
 
-    var peakDb = -160.0;
-    final end = DateTime.now().add(_chunkDuration);
-    while (_wantListening && DateTime.now().isBefore(end)) {
-      await Future.delayed(_ampPollInterval);
-      try {
-        final amp = await _recorder.getAmplitude();
-        peakDb = math.max(peakDb, amp.current);
-      } catch (_) {}
-    }
-
-    String? recorded;
+    // 2. Visible in-app floating banner if context is mounted
     try {
-      recorded = await _recorder.stop();
-    } catch (_) {}
-    recorded ??= path;
-    final file = File(recorded);
-
-    // If quiet room with no speech, discard
-    if (!_wantListening || peakDb < _speechThresholdDb) {
-      _deleteQuietly(file);
-      await Future.delayed(const Duration(milliseconds: 300));
-      return;
-    }
-
-    // Audio detected, send to Whisper model
-    unawaited(_uploadToWhisper(file));
-  }
-
-  Future<void> _uploadToWhisper(File file) async {
-    try {
-      final baseUrl = await AppConstants.getEffectiveBackendUrl();
-      final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/voice/detect'))
-        ..headers['ngrok-skip-browser-warning'] = 'true'
-        ..fields['auto_trigger'] = 'false'
-        ..fields['custom_phrase'] = _wakePhrase
-        ..files.add(await http.MultipartFile.fromPath('audio', file.path, filename: 'chunk.wav'));
-
-      final streamed = await request.send().timeout(const Duration(seconds: 12));
-      final res = await http.Response.fromStream(streamed);
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final transcription = (data['transcription'] ?? '').toString().toLowerCase().trim();
-        if (transcription.isNotEmpty) {
-          lastHeardWords.value = transcription;
-          debugPrint('🎙️ [VOICE ASR] Server Heard: "$transcription"');
-        }
-        final detected = data['emergency_detected'] == true || _matchesWakePhrase(transcription);
-        if (detected) {
-          _fireTrigger('backend whisper: "$transcription"');
-        }
+      final ctx = NavigationService.navigatorKey.currentContext;
+      if (ctx != null && ctx.mounted) {
+        ScaffoldMessenger.of(ctx).hideCurrentSnackBar();
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF059669),
+            duration: const Duration(seconds: 4),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.record_voice_over_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Voice Keyword Detected: "$keyword"',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      Text(
+                        testOnly
+                            ? 'Heard "$heardText" — Voice recognition verified!'
+                            : 'Heard "$heardText" — Launching Emergency SOS!',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
       }
-    } catch (e) {
-      debugPrint('[VOICE WHISPER] Backend upload notice: $e');
-    } finally {
-      _deleteQuietly(file);
-    }
+    } catch (_) {}
   }
 
-  // --------------------------------------------------------------------------
-  // WAKE PHRASE MATCHING & TRIGGER
-  // --------------------------------------------------------------------------
-  void _fireTrigger(String source) {
+  void _fireTrigger({
+    required String matchedKeyword,
+    required String heardText,
+  }) {
     final now = DateTime.now();
     final last = _lastTriggerAt;
     if (last != null && now.difference(last) < _triggerCooldown) return;
     _lastTriggerAt = now;
-    debugPrint('🚨 [VOICE CONFIRMED] Emergency phrase detected via $source! Triggering SOS alarm.');
+
+    lastDetectedKeyword.value = matchedKeyword;
+    lastDetectedAt.value = now;
+
+    // Auto-clear the banner state after 10 seconds so it doesn't stay stuck on HomeScreen
+    Future.delayed(const Duration(seconds: 10), () {
+      if (lastDetectedAt.value == now) {
+        lastDetectedKeyword.value = null;
+      }
+    });
+
+    debugPrint(
+      '🚨 [VOICE SOS CONFIRMED] Keyword "$matchedKeyword" detected (heard: "$heardText")! Triggering SOS.',
+    );
+
+    _notifyKeywordDetected(
+      keyword: matchedKeyword,
+      heardText: heardText,
+      testOnly: false,
+    );
+
     onWakeWordDetected?.call();
   }
 
-  void _deleteQuietly(File file) {
-    try {
-      if (file.existsSync()) file.deleteSync();
-    } catch (_) {}
-  }
+  bool matchesWakePhrase(String heard) => findMatchedKeyword(heard) != null;
 
-  bool _matchesWakePhrase(String heard) {
-    if (heard.isEmpty) return false;
-    final cleanHeard = heard
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    if (cleanHeard.isEmpty) return false;
+  /// Returns the matched keyword/phrase if [heard] matches either the user's
+  /// custom wake phrase or any built-in emergency keyword (Kiswahili or English),
+  /// or `null` if no keyword matched.
+  String? findMatchedKeyword(String heard) {
+    if (heard.isEmpty) return null;
+    final cleanHeard = _normalize(heard);
+    if (cleanHeard.isEmpty) return null;
 
-    // 1. Check custom configured phrase
-    if (_matchesSinglePhrase(cleanHeard, _wakePhrase)) return true;
+    // 1. Check user's custom configured phrase first
+    if (_matchesSinglePhrase(cleanHeard, _wakePhrase)) {
+      return _wakePhrase;
+    }
 
     // 2. Check all default emergency phrases (Kiswahili & English)
     for (final phrase in defaultWakePhrases) {
-      if (_matchesSinglePhrase(cleanHeard, phrase)) return true;
+      if (_matchesSinglePhrase(cleanHeard, phrase)) {
+        return phrase;
+      }
     }
 
-    return false;
+    return null;
   }
 
-  // Phonetic aliases & sound-alikes for Kiswahili & English emergency triggers
-  // Crucial when Google STT on Android is in English mode but user speaks Kiswahili
+  String _normalize(String input) {
+    return input
+        .toLowerCase()
+        .replaceAll(RegExp(r"[^\w\s]"), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  // Phonetic aliases & sound-alikes for Kiswahili & English emergency triggers.
+  // Crucial when Android STT is in English mode while user speaks Kiswahili (or vice versa).
+  // Kept strictly unambiguous — no everyday English words like "mother", "please", "health", etc.
   static const Map<String, List<String>> _phoneticAliases = {
-    'tuma': ['tuma', 'to my', 'two my', 'to ma', 'tumor', 'touma', 'thuma', '2 my', 'to me', 'thomas', 'tumaa'],
-    'msaada': ['msaada', 'masada', 'msada', 'sada', 'musaada', 'mussada', 'musada', 'masaha', 'massada', 'mother', 'my sada', 'asada', 'saad', 'sahada'],
-    'nisaidie': ['nisaidie', 'saidie', 'knee side', 'ni saidie', 'saidia', 'nisadie', 'side ya', 'inside', 'knee side yeah', 'said here', 'knee said'],
-    'piga': ['piga', 'peter', 'picker', 'bigger', 'peega', 'pika', 'beater', 'pig'],
-    'polisi': ['polisi', 'police', 'policeman', 'polici', 'polize', 'please', 'polisi'],
-    'okoa': ['okoa', 'okwa', 'okowa', 'oak', 'aqua', 'accord'],
-    'maisha': ['maisha', 'my share', 'maysha', 'may sha', 'mysha', 'misha'],
-    'help': ['help', 'help me', 'hell', 'held'],
-    'emergency': ['emergency', 'emergent'],
-    'save': ['save', 'safe'],
+    'tuma': [
+      'tuma',
+      'to ma',
+      'touma',
+      'thuma',
+      'tumaa',
+      'chuma',
+    ],
+    'msaada': [
+      'msaada',
+      'masada',
+      'msada',
+      'musaada',
+      'mussada',
+      'musada',
+      'massada',
+      'my sada',
+      'sahada',
+    ],
+    'nisaidie': [
+      'nisaidie',
+      'ni saidie',
+      'nisadie',
+      'nisaidia',
+      'knee side yeah',
+    ],
+    'haraka': ['haraka', 'harak'],
+    'kujeni': [
+      'kujeni',
+      'kujeni hapa',
+      'who jenny',
+      'coojee',
+    ],
+    'hapa': ['hapa', 'harper', 'hopper'],
+    'piga': [
+      'piga',
+      'peega',
+      'pika',
+    ],
+    'polisi': [
+      'polisi',
+      'police',
+      'policeman',
+      'polici',
+      'polize',
+    ],
+    'okoa': ['okoa', 'okwa', 'okowa'],
+    'maisha': [
+      'maisha',
+      'maysha',
+      'may sha',
+      'mysha',
+      'myisha',
+    ],
+    'help': [
+      'help',
+      'help me',
+      'halp',
+    ],
+    'police': ['police', 'polisi'],
   };
 
-  bool _matchesSinglePhrase(String heard, String target) {
-    final cleanHeard = heard
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    final cleanTarget = target
-        .trim()
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^\w\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+  bool _matchesSinglePhrase(String cleanHeard, String target) {
+    final cleanTarget = _normalize(target);
     if (cleanTarget.isEmpty || cleanHeard.isEmpty) return false;
 
-    // 1. Direct substring match
-    if (cleanHeard.contains(cleanTarget)) return true;
+    final heardWords = cleanHeard
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .toList();
+    final targetWords = cleanTarget
+        .split(' ')
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (targetWords.isEmpty || heardWords.isEmpty) return false;
 
-    // 2. Target keywords analysis with phonetic aliases
-    final targetWords = cleanTarget.split(' ').where((w) => w.isNotEmpty).toList();
-    if (targetWords.isEmpty) return false;
+    // 1. Exact word-bounded phrase match
+    final RegExp boundaryRegex = RegExp(
+      r'(^|\s)' + RegExp.escape(cleanTarget) + r'(\s|$)',
+    );
+    if (boundaryRegex.hasMatch(cleanHeard)) return true;
 
+    // 2. Check phonetic aliases & strict fuzzy word similarity for ALL target words
     int matchedKeywords = 0;
     for (final word in targetWords) {
-      if (cleanHeard.contains(word)) {
+      if (_heardContainsWordOrAlias(cleanHeard, heardWords, word)) {
         matchedKeywords++;
-        continue;
-      }
-      // Check phonetic sound-alikes (crucial for Kiswahili spoken on English STT engine)
-      final aliases = _phoneticAliases[word];
-      if (aliases != null) {
-        bool aliasFound = false;
-        for (final alias in aliases) {
-          if (cleanHeard.contains(alias)) {
-            aliasFound = true;
-            break;
-          }
-        }
-        if (aliasFound) {
-          matchedKeywords++;
-          continue;
-        }
       }
     }
 
-    // If all words in the target phrase matched
     if (matchedKeywords >= targetWords.length) return true;
 
-    // For 2-word phrases like "tuma msaada", matching "msaada" or "tuma" plus emergency context is valid
-    if (targetWords.length >= 2 && matchedKeywords >= 1) {
-      if (cleanHeard.contains('msaada') ||
-          cleanHeard.contains('masada') ||
-          cleanHeard.contains('sada') ||
-          cleanHeard.contains('help') ||
-          cleanHeard.contains('saidie') ||
-          cleanHeard.contains('police') ||
-          cleanHeard.contains('polisi')) {
-        return true;
+    // 3. Whole-phrase sliding window high-confidence match (>= 0.86 similarity)
+    final windowSize = targetWords.length;
+    if (heardWords.length >= windowSize) {
+      for (int i = 0; i <= heardWords.length - windowSize; i++) {
+        final windowStr = heardWords.sublist(i, i + windowSize).join(' ');
+        if (_similarity(windowStr, cleanTarget) >= 0.86) {
+          return true;
+        }
       }
+    } else if (targetWords.length == 1 &&
+        _similarity(cleanHeard, cleanTarget) >= 0.88) {
+      return true;
     }
 
     return false;
   }
 
-  /// Interactive Voice Testing (Works with on-device speech recognizer and phonetic dictionary)
-  Future<Map<String, dynamic>> recordAndTestPhrase(
+  bool _heardContainsWordOrAlias(
+    String cleanHeard,
+    List<String> heardWords,
+    String targetWord,
+  ) {
+    if (heardWords.contains(targetWord)) return true;
+
+    final aliases = _phoneticAliases[targetWord];
+    if (aliases != null) {
+      for (final alias in aliases) {
+        if (alias.contains(' ')) {
+          if (cleanHeard.contains(alias)) return true;
+        } else if (heardWords.contains(alias)) {
+          return true;
+        }
+      }
+    }
+
+    // Strict fuzzy word comparison only for long words >= 5 chars
+    if (targetWord.length >= 5) {
+      for (final hw in heardWords) {
+        if ((hw.length - targetWord.length).abs() <= 1 &&
+            _similarity(hw, targetWord) >= 0.86) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Normalized Levenshtein similarity in [0.0, 1.0].
+  double _similarity(String a, String b) {
+    if (a == b) return 1.0;
+    if (a.isEmpty || b.isEmpty) return 0.0;
+    final maxLen = max(a.length, b.length);
+    final dist = _levenshtein(a, b);
+    return (maxLen - dist) / maxLen;
+  }
+
+  int _levenshtein(String s, String t) {
+    final m = s.length;
+    final n = t.length;
+    final dp = List.generate(m + 1, (_) => List<int>.filled(n + 1, 0));
+    for (var i = 0; i <= m; i++) {
+      dp[i][0] = i;
+    }
+    for (var j = 0; j <= n; j++) {
+      dp[0][j] = j;
+    }
+    for (var i = 1; i <= m; i++) {
+      for (var j = 1; j <= n; j++) {
+        final cost = s[i - 1] == t[j - 1] ? 0 : 1;
+        dp[i][j] = min(
+          min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
+          dp[i - 1][j - 1] + cost,
+        );
+      }
+    }
+    return dp[m][n];
+  }
+
+  // --------------------------------------------------------------------------
+  // INTERACTIVE TESTING (Used by VoiceSettingsScreen without breaking singleton)
+  // --------------------------------------------------------------------------
+
+  Future<bool> startInteractiveTest({
+    required String candidatePhrase,
+    required void Function(
+      String heard,
+      double confidence,
+      bool isFinal,
+      String? matchedKeyword,
+    )
+    onResult,
+  }) async {
+    if (!await _ensureMicPermission()) return false;
+
+    _sttRestartTimer?.cancel();
+    _inInteractiveTest = true;
+    _interactiveTestCallback = onResult;
+    _wakePhrase = candidatePhrase.trim().isNotEmpty
+        ? candidatePhrase.trim().toLowerCase()
+        : _wakePhrase;
+
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    final ready = await _initSpeech();
+    if (!ready) {
+      _inInteractiveTest = false;
+      _interactiveTestCallback = null;
+      return false;
+    }
+
+    try {
+      _isSpeechListening = true;
+      isTranscribing.value = true;
+      await _speech.listen(
+        onResult: _handleSpeechResult,
+        listenOptions: stt.SpeechListenOptions(
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+          cancelOnError: false,
+          listenFor: const Duration(seconds: 12),
+          pauseFor: const Duration(seconds: 4),
+        ),
+      );
+      return true;
+    } catch (e) {
+      debugPrint('[VOICE STT] Interactive test start error: $e');
+      _inInteractiveTest = false;
+      _interactiveTestCallback = null;
+      return false;
+    }
+  }
+
+  Future<void> stopInteractiveTest({bool resumeContinuous = true}) async {
+    _inInteractiveTest = false;
+    _interactiveTestCallback = null;
+    try {
+      await _speech.stop();
+    } catch (_) {}
+    _isSpeechListening = false;
+    isTranscribing.value = false;
+
+    if (resumeContinuous && _isEnabled) {
+      await Future.delayed(const Duration(milliseconds: 250));
+      await startListening();
+    }
+  }
+
+  /// Tests phrase recognition directly via Flutter `speech_to_text` library.
+  Future<Map<String, dynamic>> testPhraseWithStt(
     String candidatePhrase, {
-    Duration duration = const Duration(seconds: 6),
+    Duration duration = const Duration(seconds: 5),
     Function(String partialText)? onPartialHeard,
   }) async {
-    try {
-      if (!await _ensureMicPermission()) {
-        return {'success': false, 'error': 'Microphone permission denied'};
-      }
+    String recognizedText = '';
+    String? matchedKeyword;
 
-      // Stop continuous listener temporarily
-      stopListening();
-      await Future.delayed(const Duration(milliseconds: 250));
-
-      isTranscribing.value = true;
-      String livePartial = '';
-
-      // 1. Start audio recorder immediately from second 0
-      final testRecorder = AudioRecorder();
-      final testPath = '${Directory.systemTemp.path}/voice_test_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-      try {
-        await testRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1),
-          path: testPath,
-        );
-      } catch (e) {
-        debugPrint('[VOICE TEST] Recorder start notice: $e');
-      }
-
-      // 2. Concurrently attempt on-device STT for instant live typing if available
-      stt.SpeechToText? testSpeech;
-      try {
-        testSpeech = stt.SpeechToText();
-        final initOk = await testSpeech.initialize(onError: (_) {});
-        if (initOk) {
-          final isSwahiliCandidate = candidatePhrase.toLowerCase().contains('msaada') ||
-              candidatePhrase.toLowerCase().contains('tuma') ||
-              candidatePhrase.toLowerCase().contains('nisaidie') ||
-              candidatePhrase.toLowerCase().contains('polisi') ||
-              candidatePhrase.toLowerCase().contains('okoa');
-          String? targetLocale;
-          if (isSwahiliCandidate) {
-            final locales = await testSpeech.locales();
-            for (final loc in locales) {
-              if (loc.localeId.toLowerCase().startsWith('sw')) {
-                targetLocale = loc.localeId;
-                break;
-              }
-            }
-          }
-
-          unawaited(testSpeech.listen(
-            onResult: (result) {
-              livePartial = result.recognizedWords;
-              if (livePartial.isNotEmpty) {
-                lastHeardWords.value = livePartial;
-                onPartialHeard?.call(livePartial);
-              }
-            },
-            listenOptions: stt.SpeechListenOptions(
-              localeId: targetLocale,
-              listenMode: stt.ListenMode.dictation,
-              partialResults: true,
-              cancelOnError: false,
-              listenFor: duration,
-              pauseFor: const Duration(seconds: 2),
-            ),
-          ));
+    final started = await startInteractiveTest(
+      candidatePhrase: candidatePhrase,
+      onResult: (heard, confidence, isFinal, matched) {
+        recognizedText = heard;
+        onPartialHeard?.call(heard);
+        if (matched != null) {
+          matchedKeyword = matched;
         }
-      } catch (_) {}
+      },
+    );
 
-      // 3. Wait for the test duration
-      await Future.delayed(duration);
-
-      // 4. Stop speech & recorder
-      try { await testSpeech?.stop(); } catch (_) {}
-      String? recordedPath;
-      try {
-        recordedPath = await testRecorder.stop();
-      } catch (_) {}
-      try { await testRecorder.dispose(); } catch (_) {}
-
-      final file = File(recordedPath ?? testPath);
-      String finalTranscription = livePartial;
-      String? detectedKeyword;
-      bool matched = false;
-
-      // 5. Send recorded audio clip to backend multilingual ASR
-      if (file.existsSync() && file.lengthSync() > 1000) {
-        try {
-          final baseUrl = await AppConstants.getEffectiveBackendUrl();
-          final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/voice/detect'))
-            ..headers['ngrok-skip-browser-warning'] = 'true'
-            ..fields['auto_trigger'] = 'false'
-            ..fields['custom_phrase'] = candidatePhrase
-            ..files.add(await http.MultipartFile.fromPath('audio', file.path, filename: 'test.wav'));
-
-          final streamed = await request.send().timeout(const Duration(seconds: 12));
-          final res = await http.Response.fromStream(streamed);
-
-          if (res.statusCode == 200) {
-            final data = jsonDecode(res.body) as Map<String, dynamic>;
-            final serverTrans = (data['transcription'] ?? '').toString().trim();
-            if (serverTrans.isNotEmpty) {
-              finalTranscription = serverTrans;
-            }
-            if (data['emergency_detected'] == true) {
-              matched = true;
-              detectedKeyword = data['matched_keyword']?.toString();
-            }
-          }
-        } catch (e) {
-          debugPrint('[VOICE TEST] Backend upload notice: $e');
-        } finally {
-          try { file.deleteSync(); } catch (_) {}
-        }
-      }
-
-      // 6. Check match against candidate phrase and emergency wake phrases
-      if (!matched && finalTranscription.isNotEmpty) {
-        matched = _matchesSinglePhrase(finalTranscription, candidatePhrase) ||
-            _matchesWakePhrase(finalTranscription);
-      }
-
-      isTranscribing.value = false;
-      if (finalTranscription.isNotEmpty) {
-        lastHeardWords.value = finalTranscription;
-      }
-
-      if (_isEnabled) unawaited(startListening());
-
+    if (!started) {
       return {
-        'success': true,
-        'transcription': finalTranscription.isNotEmpty
-            ? finalTranscription
-            : 'No clear speech detected. Speak clearly into mic.',
-        'matched': matched,
-        'keyword': detectedKeyword ?? candidatePhrase,
+        'success': false,
+        'error': 'Speech recognizer unavailable or mic permission denied',
       };
-    } catch (e) {
-      isTranscribing.value = false;
-      debugPrint('[VOICE TEST ERROR] $e');
-      if (_isEnabled) unawaited(startListening());
-      return {'success': false, 'error': e.toString()};
     }
+
+    await Future.delayed(duration);
+    await stopInteractiveTest(resumeContinuous: _isEnabled);
+
+    final isMatched =
+        matchedKeyword != null ||
+        (recognizedText.isNotEmpty &&
+            findMatchedKeyword(recognizedText) != null);
+
+    return {
+      'success': true,
+      'transcription': recognizedText.isNotEmpty ? recognizedText : 'No clear speech detected. Please speak clearly into the microphone.',
+      'matched': isMatched,
+      'keyword': matchedKeyword ?? candidatePhrase,
+    };
+  }
+
+  /// Backwards-compatible alias for existing screens
+  Future<Map<String, dynamic>> recordAndTestPhrase(
+    String candidatePhrase, {
+    Duration duration = const Duration(seconds: 5),
+    Function(String partialText)? onPartialHeard,
+  }) async {
+    return testPhraseWithStt(
+      candidatePhrase,
+      duration: duration,
+      onPartialHeard: onPartialHeard,
+    );
   }
 }

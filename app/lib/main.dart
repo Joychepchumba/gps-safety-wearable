@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'core/services/background_protection_service.dart';
+import 'core/services/notification_service.dart';
 
 import 'core/theme/theme_controller.dart';
 import 'core/config/supabase_config.dart';
@@ -31,6 +32,7 @@ import 'features/wearable/screens/wearable_screen.dart';
 import 'features/wearable/screens/pendant_shop_screen.dart';
 import 'features/alerts/screens/alert_history_screen.dart';
 import 'features/profile/screens/profile_screen.dart';
+import 'features/community/screens/community_responder_screen.dart';
 
 
 void main() async {
@@ -39,6 +41,7 @@ void main() async {
   BackgroundProtectionService.init();
   await SupabaseConfig.initialize();
   await setupServiceLocator();
+  await sl<NotificationService>().initialize();
   sl<EmergencyController>(); // create eagerly so shake/voice are armed on every page
 
   runApp(const SafeGuardApp());
@@ -80,6 +83,7 @@ class SafeGuardApp extends StatelessWidget {
           '/reset-password': (context) => const ResetPasswordScreen(),
           '/home': (context) => const HomeScreen(),
           '/emergency': (context) => const EmergencyScreen(),
+          '/sos-countdown': (context) => const EmergencyScreen(),
           '/map': (context) => const MapScreen(),
           '/contacts': (context) => const ContactsScreen(),
           '/alerts': (context) => const AlertHistoryScreen(),
@@ -87,6 +91,7 @@ class SafeGuardApp extends StatelessWidget {
           '/shop': (context) => const PendantShopScreen(),
           '/verify-otp': (context) => const VerifyOtpScreen(),
           '/profile': (context) => const ProfileScreen(),
+          '/community-responders': (context) => const CommunityResponderScreen(),
         },
       );
     },

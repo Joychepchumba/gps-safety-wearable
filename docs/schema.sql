@@ -185,8 +185,8 @@ BEGIN
     )
     VALUES (
         NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'full_name', 'User'),
-        COALESCE(NEW.raw_user_meta_data->>'phone_number', ''),
+        COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', 'User'),
+        COALESCE(NULLIF(NEW.raw_user_meta_data->>'phone_number', ''), NULLIF(NEW.raw_user_meta_data->>'phone', ''), '+254700' || substring(replace(NEW.id::text, '-', ''), 1, 6)),
         NEW.email,
         NEW.raw_user_meta_data->>'emergency_password_hash',
         COALESCE((NEW.raw_user_meta_data->>'is_community_responder')::boolean, false),

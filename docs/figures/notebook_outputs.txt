@@ -1,0 +1,614 @@
+=== Cell 2 text ===
+[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+ipython 7.34.0 requires jedi>=0.16, which is not installed.
+google-colab 1.0.0 requires requests==2.32.4, but you have requests 2.34.2 which is incompatible.
+moviepy 1.0.3 requires decorator<5.0,>=4.0.2, but you have decorator 5.3.1 which is incompatible.
+gcsfs 2025.12.0 requires fsspec==2025.12.0, but you have fsspec 2025.3.0 which is incompatible.[0m[31m
+[0m
+=== Cell 3 text ===
+Mounted at /content/drive
+TensorFlow 2.21.0 | GPU: none
+Workspace: /content/drive/MyDrive/SafeGuard-STT/kws_v2 | SMOKE_TEST = False
+
+=== Cell 11 text ===
+validated sentences: 269,140 | speakers: 1,206
+positives: Counter({'msaada': 317, 'polisi': 269}) | near-miss: 216 | neutral sentences: 3500
+Downloading Common Voice archive (~21 GB). Keep this tab open; interrupted downloads resume if you re-run.
+█████████████████████████████████████████████████🦊 100.0% (20.9 GB/20.9 GB) Average: 63.4 MB/s Total time: 05:37
+raw clips cached: 4292 | still to pull: 0
+Downloading: "https://dl.fbaipublicfiles.com/mms/torchaudio/ctc_alignment_mling_uroman/model.pt" to /root/.cache/torch/hub/checkpoints/model.pt
+
+=== Cell 11 text ===
+100%|██████████| 1.18G/1.18G [00:07<00:00, 165MB/s] 
+
+=== Cell 11 data/plain ===
+keywords:   0%|          | 0/586 [00:00<?, ?it/s]
+=== Cell 11 data/plain ===
+near-miss:   0%|          | 0/216 [00:00<?, ?it/s]
+=== Cell 11 data/plain ===
+unknown:   0%|          | 0/3500 [00:00<?, ?it/s]
+=== Cell 11 text ===
+label
+unknown    3070
+msaada      317
+polisi      268
+
+=== Cell 11 data/plain ===
+label    source   
+msaada   cv27          317
+polisi   cv27          268
+unknown  cv27         2855
+         cv27_near     215
+dtype: int64
+=== Cell 14 data/plain ===
+MSWC English:   0%|          | 0/4900 [00:00<?, ?it/s]
+=== Cell 14 text ===
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+WARNING:huggingface_hub.utils._http:Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+
+=== Cell 14 data/plain ===
+README.md:   0%|          | 0.00/8.61k [00:00<?, ?B/s]
+=== Cell 14 data/plain ===
+ml_spoken_words.py:   0%|          | 0.00/10.8k [00:00<?, ?B/s]
+=== Cell 14 text ===
+scanned 900,000 stream items | unique unknown words: 659
+label
+unknown    3500
+help        444
+police      173
+
+=== Cell 14 data/plain ===
+label    source
+help     mswc       444
+police   mswc       173
+unknown  mswc      3500
+dtype: int64
+=== Cell 17 text ===
+Downloading ESC-50 (~600 MB) ...
+
+=== Cell 17 data/plain ===
+noise windows:   0%|          | 0/10000 [00:00<?, ?it/s]
+=== Cell 17 text ===
+forced_split
+test      638
+train    1955
+val       607
+
+=== Cell 17 data/plain ===
+source
+esc50    3200
+dtype: int64
+=== Cell 19 text ===
+real recordings: 0 | manual clips: 0
+
+=== Cell 22 data/plain ===
+QC:   0%|          | 0/10972 [00:00<?, ?it/s]
+=== Cell 22 text ===
+removed 0 unreadable / wrong-length / duplicate clips
+lang       en   env    sw
+label                    
+help      444     0     0
+msaada      0     0   317
+noise       0  3200     0
+police    173     0     0
+polisi      0     0   268
+unknown  3500     0  3070
+
+=== Cell 23 text ===
+best split seed: 0
+
+=== Cell 23 data/plain ===
+split    train  val  test
+label                    
+help       309   67    68
+msaada     234   45    38
+noise     1955  607   638
+police     124   22    27
+polisi     204   33    31
+unknown   4868  857   845
+=== Cell 23 text ===
+WARNING: only 22 clips for police in val
+OK: no speaker appears in more than one split
+
+=== Cell 24 text ===
+train:   7694 clips | 246 MB
+val  :   1631 clips | 52 MB
+test :   1647 clips | 53 MB
+
+Saved image: docs\figures\cell_26_fig_01.png
+=== Cell 26 text ===
+share of each keyword's clips coming from its 5 busiest speakers:
+ label
+help      0.011
+msaada    0.095
+police    0.029
+polisi    0.112
+
+Saved image: docs\figures\cell_27_fig_02.png
+Saved image: docs\figures\cell_28_fig_03.png
+=== Cell 29 data/plain ===
+stats:   0%|          | 0/4000 [00:00<?, ?it/s]
+Saved image: docs\figures\cell_29_fig_04.png
+=== Cell 30 text ===
+[sw] 4-scalar probe accuracy 0.810 vs majority-class 0.831  -> OK (no obvious shortcut)
+[en] 4-scalar probe accuracy 0.883 vs majority-class 0.856  -> OK (no obvious shortcut)
+
+=== Cell 31 data/plain ===
+mfcc:   0%|          | 0/2500 [00:00<?, ?it/s]
+Saved image: docs\figures\cell_31_fig_05.png
+=== Cell 31 text ===
+If the right plot separates cleanly by language/source but the left does not separate by word, the model may learn the corpus instead of the word. Balanced `unknown` data in both languages is the countermeasure.
+
+=== Cell 32 text ===
+Speakers per split: {'train': 2870, 'val': 695, 'test': 696}
+Overlap train∩val: 0 | train∩test: 0 | val∩test: 0
+Exact-duplicate audio removed: 0
+
+Per-split class share (%):
+
+=== Cell 32 data/plain ===
+split    train   val  test
+label                     
+help       4.0   4.1   4.1
+msaada     3.0   2.8   2.3
+noise     25.4  37.2  38.7
+police     1.6   1.3   1.6
+polisi     2.7   2.0   1.9
+unknown   63.3  52.5  51.3
+=== Cell 34 text ===
+feature shape per clip: (49, 40, 1) | train mean=-3.960 std=6.057
+class weights: {'msaada': np.float32(5.48), 'polisi': np.float32(6.29), 'help': np.float32(4.15), 'police': np.float32(10.34), 'unknown': np.float32(0.26), 'noise': np.float32(0.66)}
+noise clips available for mixing: 1500
+
+Saved image: docs\figures\cell_35_fig_06.png
+=== Cell 37 data/plain ===
+mfcc train:   0%|          | 0/7694 [00:00<?, ?it/s]
+=== Cell 37 data/plain ===
+mfcc val:   0%|          | 0/1631 [00:00<?, ?it/s]
+=== Cell 37 data/plain ===
+mfcc test:   0%|          | 0/1647 [00:00<?, ?it/s]
+=== Cell 37 data/plain ===
+                    macro_f1        kw_recall        false_accept       
+split                   test    val      test    val         test    val
+model                                                                   
+MFCC + LogReg          0.545  0.526     0.860  0.820        0.256  0.270
+MFCC + RandomForest    0.412  0.403     0.189  0.168        0.003  0.004
+majority class         0.113  0.115     0.000  0.000        0.000  0.000
+=== Cell 39 text ===
+default model cost: {'params': 4770, 'macs': 548928, 'arena_kb': 12.2, 'est_ms': 54.9} | within ESP32-C3 budget: True
+
+=== Cell 39 data/plain ===
+
+=== Cell 39 text ===
+Model: "safeguard_kws_dscnn"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ input_layer_1 (InputLayer)      │ (None, 49, 40, 1)      │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ conv2d_4 (Conv2D)               │ (None, 25, 20, 12)     │           180 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_7           │ (None, 25, 20, 12)     │            48 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_7 (ReLU)                  │ (None, 25, 20, 12)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ depthwise_conv2d_3              │ (None, 13, 10, 12)     │           108 │
+│ (DepthwiseConv2D)               │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_8           │ (None, 13, 10, 12)     │            48 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_8 (ReLU)                  │ (None, 13, 10, 12)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ conv2d_5 (Conv2D)               │ (None, 13, 10, 24)     │           288 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_9           │ (None, 13, 10, 24)     │            96 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_9 (ReLU)                  │ (None, 13, 10, 24)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ depthwise_conv2d_4              │ (None, 13, 10, 24)     │           216 │
+│ (DepthwiseConv2D)               │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_10          │ (None, 13, 10, 24)     │            96 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_10 (ReLU)                 │ (None, 13, 10, 24)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ conv2d_6 (Conv2D)               │ (None, 13, 10, 36)     │           864 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_11          │ (None, 13, 10, 36)     │           144 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_11 (ReLU)                 │ (None, 13, 10, 36)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ depthwise_conv2d_5              │ (None, 13, 10, 36)     │           324 │
+│ (DepthwiseConv2D)               │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_12          │ (None, 13, 10, 36)     │           144 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_12 (ReLU)                 │ (None, 13, 10, 36)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ conv2d_7 (Conv2D)               │ (None, 13, 10, 48)     │         1,728 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ batch_normalization_13          │ (None, 13, 10, 48)     │           192 │
+│ (BatchNormalization)            │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ re_lu_13 (ReLU)                 │ (None, 13, 10, 48)     │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ global_average_pooling2d_1      │ (None, 48)             │             0 │
+│ (GlobalAveragePooling2D)        │                        │               │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_1 (Dropout)             │ (None, 48)             │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_1 (Dense)                 │ (None, 6)              │           294 │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+ Total params: 4,770 (18.63 KB)
+ Trainable params: 4,386 (17.13 KB)
+ Non-trainable params: 384 (1.50 KB)
+
+
+=== Cell 41 text ===
+trial 1/12: F1=0.473 params=4,110 cfg={'lr': 0.0012941783511729984, 'width': 0.5, 'blocks': 4, 'dropout': 0.3}
+trial 2/12: F1=0.473 params=4,770 cfg={'lr': 0.0031203165134715857, 'width': 0.75, 'blocks': 3, 'dropout': 0.2}
+
+=== Cell 41 text ===
+WARNING:tensorflow:5 out of the last 15 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x7ee06ed37ec0> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+
+=== Cell 41 text ===
+trial 3/12: F1=0.467 params=6,918 cfg={'lr': 0.0018933551042526657, 'width': 1.5, 'blocks': 2, 'dropout': 0.1}
+
+=== Cell 41 text ===
+WARNING:tensorflow:5 out of the last 15 calls to <function TensorFlowTrainer.make_predict_function.<locals>.one_step_on_data_distributed at 0x7ee070466f20> triggered tf.function retracing. Tracing is expensive and the excessive number of tracings could be due to (1) creating @tf.function repeatedly in a loop, (2) passing tensors with different shapes, (3) passing Python objects instead of tensors. For (1), please define your @tf.function outside of the loop. For (2), @tf.function has reduce_retracing=True option that can avoid unnecessary retracing. For (3), please refer to https://www.tensorflow.org/guide/function#controlling_retracing and https://www.tensorflow.org/api_docs/python/tf/function for  more details.
+
+=== Cell 41 text ===
+trial 4/12: F1=0.403 params=6,918 cfg={'lr': 0.0013204081321129225, 'width': 1.5, 'blocks': 2, 'dropout': 0.3}
+trial 5/12: F1=0.343 params=2,310 cfg={'lr': 0.001568733522552853, 'width': 0.75, 'blocks': 2, 'dropout': 0.2}
+trial 6/12: F1=0.465 params=4,110 cfg={'lr': 0.002110913126906055, 'width': 0.5, 'blocks': 4, 'dropout': 0.2}
+trial 7/12: F1=0.533 params=7,890 cfg={'lr': 0.004834038283055027, 'width': 0.75, 'blocks': 4, 'dropout': 0.3}
+trial 8/12: F1=0.342 params=1,286 cfg={'lr': 0.0057185935064703744, 'width': 0.5, 'blocks': 2, 'dropout': 0.2}
+trial 9/12: F1=0.444 params=6,918 cfg={'lr': 0.005778043910895514, 'width': 1.5, 'blocks': 2, 'dropout': 0.1}
+trial 10/12: F1=0.320 params=1,286 cfg={'lr': 0.0005214348423435606, 'width': 0.5, 'blocks': 2, 'dropout': 0.3}
+trial 11/12: F1=0.569 params=4,110 cfg={'lr': 0.0031762003176392588, 'width': 0.5, 'blocks': 4, 'dropout': 0.1}
+trial 12/12: F1=0.468 params=2,542 cfg={'lr': 0.005086928613707689, 'width': 0.5, 'blocks': 3, 'dropout': 0.1}
+
+=== Cell 41 data/plain ===
+        lr  width  blocks  dropout    ls  batch  noise_p      wd  \
+0   0.0032   0.50       4      0.1  0.05     32      0.8  0.0001   
+1   0.0048   0.75       4      0.3  0.05     32      0.8  0.0001   
+2   0.0013   0.50       4      0.3  0.00     32      0.5  0.0010   
+3   0.0031   0.75       3      0.2  0.00     32      0.8  0.0010   
+4   0.0051   0.50       3      0.1  0.10     32      0.8  0.0010   
+5   0.0019   1.50       2      0.1  0.10     32      0.5  0.0010   
+6   0.0021   0.50       4      0.2  0.05     64      0.8  0.0010   
+7   0.0058   1.50       2      0.1  0.00     32      0.5  0.0001   
+8   0.0013   1.50       2      0.3  0.00     32      0.5  0.0001   
+9   0.0016   0.75       2      0.2  0.05     64      0.5  0.0010   
+10  0.0057   0.50       2      0.2  0.10     32      0.8  0.0010   
+11  0.0005   0.50       2      0.3  0.10     32      0.5  0.0010   
+
+    val_macro_f1  val_kw_recall  val_false_accept  params  macs_M  arena_kb  \
+0         0.5685         0.9701            0.2684    4110    0.45       8.1   
+1         0.5327         0.9820            0.3429    7890    0.90      12.2   
+2         0.4731         0.9341            0.3873    4110    0.45       8.1   
+3         0.4729         0.9461            0.3907    4770    0.55      12.2   
+4         0.4684         0.9281            0.3941    2542    0.28       8.1   
+5         0.4670         0.9281            0.3969    6918    0.86      23.4   
+6         0.4652         0.9401            0.4044    4110    0.45       8.1   
+7         0.4435         0.8862            0.4426    6918    0.86      23.4   
+8         0.4033         0.9281            0.5082    6918    0.86      23.4   
+9         0.3427         0.6826            0.4734    2310    0.28      11.7   
+10        0.3416         0.7305            0.5342    1286    0.15       7.8   
+11        0.3203         0.7665            0.5656    1286    0.15       7.8   
+
+    est_ms  epochs_run   secs  
+0     45.3          14  250.2  
+1     90.5          14  272.0  
+2     45.3          14  253.4  
+3     54.9          14  231.8  
+4     28.3          14  217.6  
+5     86.4          14  234.4  
+6     45.3          14  234.8  
+7     86.4          10  176.0  
+8     86.4          14  232.0  
+9     28.2          10  147.6  
+10    15.5          10  125.7  
+11    15.5          14  176.6  
+=== Cell 41 text ===
+
+BEST CONFIG: {'lr': 0.0031762003176392588, 'width': 0.5, 'blocks': 4, 'dropout': 0.1, 'ls': 0.05, 'batch': 32, 'noise_p': 0.8, 'wd': 0.0001}
+
+Saved image: docs\figures\cell_42_fig_07.png
+=== Cell 43 text ===
+full recipe                F1=0.538  kw_recall=0.850  false_accept=0.2917
+no noise mixing            F1=0.617  kw_recall=0.946  false_accept=0.2049
+no SpecAugment             F1=0.653  kw_recall=0.946  false_accept=0.1803
+no time shift              F1=0.601  kw_recall=0.964  false_accept=0.2281
+no gain jitter             F1=0.535  kw_recall=0.964  false_accept=0.3149
+no augmentation at all     F1=0.698  kw_recall=0.934  false_accept=0.1284
+
+Saved image: docs\figures\cell_43_fig_08.png
+=== Cell 44 data/plain ===
+   train_fraction  n_train  val_macro_f1
+0            0.25     1923         0.349
+1            0.50     3847         0.449
+2            1.00     7694         0.539
+Saved image: docs\figures\cell_44_fig_09.png
+=== Cell 44 text ===
+If the curve is still rising at 100 %, collecting more speakers will help. If it has flattened, the limit is data quality/mismatch, not quantity.
+
+=== Cell 46 text ===
+Epoch 1/45
+241/241 - 23s - 94ms/step - accuracy: 0.2294 - loss: 1.6058 - val_accuracy: 0.3709 - val_loss: 1.3849 - learning_rate: 0.0032
+Epoch 2/45
+241/241 - 14s - 59ms/step - accuracy: 0.3088 - loss: 1.3864 - val_accuracy: 0.4635 - val_loss: 1.2967 - learning_rate: 0.0032
+Epoch 3/45
+241/241 - 14s - 59ms/step - accuracy: 0.4001 - loss: 1.2014 - val_accuracy: 0.5414 - val_loss: 1.1566 - learning_rate: 0.0032
+Epoch 4/45
+241/241 - 17s - 73ms/step - accuracy: 0.4359 - loss: 1.1221 - val_accuracy: 0.5469 - val_loss: 1.2178 - learning_rate: 0.0032
+Epoch 5/45
+241/241 - 15s - 60ms/step - accuracy: 0.4578 - loss: 1.0727 - val_accuracy: 0.5236 - val_loss: 1.2598 - learning_rate: 0.0032
+Epoch 6/45
+241/241 - 21s - 85ms/step - accuracy: 0.4589 - loss: 1.0328 - val_accuracy: 0.6793 - val_loss: 0.9034 - learning_rate: 0.0032
+Epoch 7/45
+241/241 - 15s - 60ms/step - accuracy: 0.4866 - loss: 0.9672 - val_accuracy: 0.6278 - val_loss: 0.9942 - learning_rate: 0.0032
+Epoch 8/45
+241/241 - 14s - 60ms/step - accuracy: 0.5213 - loss: 0.9509 - val_accuracy: 0.5218 - val_loss: 1.2608 - learning_rate: 0.0032
+Epoch 9/45
+241/241 - 15s - 62ms/step - accuracy: 0.5233 - loss: 0.9180 - val_accuracy: 0.6002 - val_loss: 1.0513 - learning_rate: 0.0032
+Epoch 10/45
+241/241 - 14s - 60ms/step - accuracy: 0.5411 - loss: 0.8855 - val_accuracy: 0.6064 - val_loss: 1.1140 - learning_rate: 0.0016
+Epoch 11/45
+241/241 - 15s - 63ms/step - accuracy: 0.5746 - loss: 0.8696 - val_accuracy: 0.6242 - val_loss: 1.0167 - learning_rate: 0.0016
+Epoch 12/45
+241/241 - 20s - 85ms/step - accuracy: 0.5845 - loss: 0.8544 - val_accuracy: 0.6278 - val_loss: 1.0058 - learning_rate: 0.0016
+
+Saved image: docs\figures\cell_46_fig_10.png
+=== Cell 46 text ===
+parameters: 4,110 | val macro-F1 0.505 | kw recall 0.904 | false-accept 0.3361
+
+=== Cell 48 text ===
+              precision    recall  f1-score   support
+
+      msaada      0.167     0.763     0.274        38
+      polisi      0.205     0.774     0.324        31
+        help      0.330     0.941     0.489        68
+      police      0.213     1.000     0.351        27
+     unknown      0.937     0.512     0.663       845
+       noise      0.998     0.897     0.945       638
+
+    accuracy                          0.698      1647
+   macro avg      0.475     0.815     0.507      1647
+weighted avg      0.892     0.698     0.744      1647
+
+
+Saved image: docs\figures\cell_48_fig_11.png
+=== Cell 48 data/plain ===
+                     macro_f1    acc  kw_recall  false_accept
+model                                                        
+majority class          0.113  0.513      0.000         0.000
+MFCC + LogReg           0.545  0.748      0.860         0.256
+MFCC + RandomForest     0.412  0.891      0.189         0.003
+DS-CNN (float32)        0.507  0.698      0.878         0.310
+=== Cell 49 data/plain ===
+                                 group    n  recall  \
+0                          msaada (sw)   38   0.763   
+1                          polisi (sw)   31   0.774   
+2                            help (en)   68   0.941   
+3                          police (en)   27   1.000   
+4  unknown speech (sw) -> false accept  323     NaN   
+5  unknown speech (en) -> false accept  522     NaN   
+6                noise -> false accept  638     NaN   
+
+   confused_with_other_language_kw  predicted_unknown_or_noise  false_accept  
+0                            0.000                       0.211           NaN  
+1                            0.129                       0.032           NaN  
+2                            0.000                       0.044           NaN  
+3                            0.000                       0.000           NaN  
+4                              NaN                         NaN         0.619  
+5                              NaN                         NaN         0.404  
+6                              NaN                         NaN         0.077  
+=== Cell 49 text ===
+
+No real recordings in `real/` yet. Record some on the pendant mic and re-run from section 2.
+
+Saved image: docs\figures\cell_50_fig_12.png
+=== Cell 51 data/plain ===
+          condition  macro_f1    acc  kw_recall  false_accept
+0             clean     0.506  0.697      0.872         0.310
+1  +noise 20 dB SNR     0.503  0.678      0.896         0.336
+2  +noise 10 dB SNR     0.491  0.667      0.848         0.330
+3   +noise 5 dB SNR     0.443  0.615      0.738         0.349
+4   +noise 0 dB SNR     0.395  0.554      0.622         0.332
+5         gain x0.1     0.267  0.474      0.451         0.358
+6        gain x0.25     0.452  0.635      0.799         0.353
+7         gain x2.0     0.531  0.723      0.848         0.277
+Saved image: docs\figures\cell_51_fig_13.png
+=== Cell 53 text ===
+negative stream: 24.7 min (1483 clips)
+
+=== Cell 53 data/plain ===
+two-word trials:   0%|          | 0/300 [00:00<?, ?it/s]
+=== Cell 53 data/plain ===
+one-word trials:   0%|          | 0/300 [00:00<?, ?it/s]
+=== Cell 53 data/plain ===
+   threshold  false_alerts_per_hr_single_rule  false_alerts_per_hr_pair_rule  \
+0       0.50                          288.874                        233.041   
+1       0.60                          240.324                        145.651   
+2       0.70                          182.063                         60.688   
+3       0.80                          106.811                         16.993   
+4       0.90                           26.703                          0.000   
+5       0.95                            7.283                          0.000   
+6       0.98                            0.000                          0.000   
+7       0.99                            0.000                          0.000   
+
+   trigger_rate_two_words  alert_rate_one_word_pair_rule  \
+0                   0.290                          0.187   
+1                   0.117                          0.083   
+2                   0.023                          0.033   
+3                   0.007                          0.010   
+4                   0.000                          0.000   
+5                   0.000                          0.000   
+6                   0.000                          0.000   
+7                   0.000                          0.000   
+
+   alert_rate_one_word_single_rule  
+0                            0.660  
+1                            0.450  
+2                            0.283  
+3                            0.147  
+4                            0.023  
+5                            0.003  
+6                            0.000  
+7                            0.000  
+=== Cell 53 text ===
+(Negative stream length 24.7 min. With zero alerts the 95 % upper bound is ≈ 7.3 false alerts/hour; a long, real-life recording is needed to claim anything per-day.)
+
+Saved image: docs\figures\cell_54_fig_14.png
+=== Cell 54 text ===
+Chosen operating threshold: 0.5  (lowest false-alert rate that still triggers ≥ 80 % of two-word trials).  Override THRESHOLD here if you prefer a different trade-off.
+
+=== Cell 55 text ===
+498 test errors out of 1647
+most common confusions (true, predicted):
+ y        p      
+unknown  msaada     136
+         help        93
+         police      92
+         polisi      90
+noise    help        37
+         unknown     17
+msaada   unknown      8
+noise    msaada       7
+polisi   police       4
+help     unknown      3
+true=unknown predicted=polisi (p=0.96) lang=sw src=cv27 word=ofsi
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 55 text ===
+true=unknown predicted=police (p=0.96) lang=en src=mswc word=aberration
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 55 text ===
+true=unknown predicted=police (p=0.94) lang=en src=mswc word=aces
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 55 text ===
+true=unknown predicted=help (p=0.93) lang=en src=mswc word=adopt
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 55 text ===
+true=noise predicted=help (p=0.92) lang=env src=esc50 word=frog
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 55 text ===
+true=unknown predicted=help (p=0.92) lang=en src=mswc word=abundant
+
+=== Cell 55 data/plain ===
+<IPython.lib.display.Audio object>
+=== Cell 57 text ===
+Saved artifact at '/tmp/tmpkl8d2zg8'. The following endpoints are available:
+
+* Endpoint 'serve'
+  args_0 (POSITIONAL_ONLY): TensorSpec(shape=(None, 49, 40, 1), dtype=tf.float32, name='keras_tensor')
+Output Type:
+  TensorSpec(shape=(None, 6), dtype=tf.float32, name=None)
+Captures:
+  139501682274768: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682277264: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682274576: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682277456: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682275344: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682274960: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682276688: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682276496: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682262480: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682263632: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682276880: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682264592: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682262288: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682264784: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682274384: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682262672: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682264016: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682263824: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682266704: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682277072: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682264208: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682265936: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682266512: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682266128: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682262096: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682266896: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682268624: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682268432: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682268048: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682264400: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682268816: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682270544: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682271120: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682270736: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682266320: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682268240: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682273232: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682273040: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682272656: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682269008: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682270160: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682267472: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682272464: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682267664: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682270928: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682267856: TensorSpec(shape=(), dtype=tf.resource, name=None)
+  139501682265744: TensorSpec(shape=(), dtype=tf.resource, name=None)
+INT8 model size: 19.4 KB | parameters: 4,110 | rough arena estimate: ~8 KB (measure on device)
+
+=== Cell 57 data/plain ===
+                  model  macro_f1  kw_recall  false_accept
+1        majority class     0.113      0.000         0.000
+3         MFCC + LogReg     0.545      0.860         0.256
+5   MFCC + RandomForest     0.412      0.189         0.003
+7      DS-CNN (float32)     0.507      0.878         0.310
+9  DS-CNN (INT8 TFLite)     0.506      0.884         0.318
+=== Cell 58 data/plain ===
+                            item    value    limit                unit  fits
+0  model in flash (INT8 .tflite)    19.43    200.0                  KB  True
+1           tensor arena (rough)     8.12     64.0                  KB  True
+2                     parameters  4110.00  40000.0                      True
+3             MACs per inference     0.45      3.0             million  True
+4       estimated inference time    45.33    150.0  ms (ASSUMED speed)  True
+=== Cell 58 text ===
+All within budget: True
+The latency row uses an ASSUMED 10 M MAC/s. Time one real inference on your C3 (esp_timer_get_time around the invoke) and update MCU['macs_per_sec'].
+
+=== Cell 59 text ===
+Wrote:
+  safeguard_kws_model.h
+  kws_config.h
+  trigger_logic.h
+
+=== Cell 61 text ===
+Edge Impulse upload skipped (set UPLOAD_TO_EI = True after adding the EI_API_KEY secret).
+
+=== Cell 63 data/plain ===
+                  model  macro_f1    acc  kw_recall  false_accept
+1        majority class     0.113  0.513      0.000         0.000
+3         MFCC + LogReg     0.545  0.748      0.860         0.256
+5   MFCC + RandomForest     0.412  0.891      0.189         0.003
+7      DS-CNN (float32)     0.507  0.698      0.878         0.310
+9  DS-CNN (INT8 TFLite)     0.506  0.692      0.884         0.318
+=== Cell 63 text ===
+Saved model card, results, firmware headers and plots in /content/drive/MyDrive/SafeGuard-STT/kws_v2/results 
+Zip: /content/drive/MyDrive/SafeGuard-STT/kws_v2/kws_v2_artifacts.zip
+
+=== Cell 63 data/plain ===
+<IPython.core.display.Javascript object>
+=== Cell 63 data/plain ===
+<IPython.core.display.Javascript object>

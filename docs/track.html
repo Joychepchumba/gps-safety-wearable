@@ -83,10 +83,40 @@
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid rgba(239, 68, 68, 0.45);
       border-radius: 16px;
-      padding: 16px 18px;
+      padding: 14px 16px;
       box-shadow: 0 20px 45px rgba(0, 0, 0, 0.65), 0 0 25px rgba(239, 68, 68, 0.2);
       z-index: 100;
       transition: all 0.3s ease;
+    }
+    .emergency-card.collapsed .card-collapsible {
+      display: none;
+    }
+    .card-toggle-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: #94a3b8;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .card-toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+    }
+    @media (max-width: 600px) {
+      .emergency-card {
+        top: auto;
+        bottom: 60px;
+        left: 12px;
+        right: 12px;
+        max-width: none;
+        padding: 12px 14px;
+      }
     }
     .badge-row {
       display: flex;
@@ -154,10 +184,10 @@
       color: #facc15;
       background: rgba(234, 179, 8, 0.12);
       border: 1px solid rgba(234, 179, 8, 0.3);
-      padding: 5px 10px;
+      padding: 6px 10px;
       border-radius: 8px;
       margin-bottom: 12px;
-      display: none;
+      display: block;
     }
     .btn-actions {
       display: grid;
@@ -284,32 +314,38 @@
 
   <div class="engine-pill" id="engine-tag">⚡ Mapbox 3D</div>
 
-  <div class="emergency-card">
+  <div class="emergency-card" id="emergency-card">
     <div class="badge-row">
       <span class="badge-sos" id="badge-status">
         <span style="font-size:8px;">●</span> SOS ACTIVE
       </span>
-      <span class="status-text">Distress: <b>HIGH PRIORITY</b></span>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span class="status-text">Distress: <b>HIGH PRIORITY</b></span>
+        <button class="card-toggle-btn" id="btn-toggle-card" onclick="toggleCard()">▼ Hide</button>
+      </div>
     </div>
     <div class="person-title" id="title-name">⚠️ SafeGuard Distress Signal</div>
-    <div class="subtext">Real-time GPS emergency distress beacon</div>
     
-    <div class="coords-bar">
-      <span>📍 <span id="val-lat">-1.292100</span>, <span id="val-lng">36.821900</span></span>
-      <span style="color:#64748b; font-size:11px;" id="last-updated">LIVE</span>
-    </div>
+    <div class="card-collapsible">
+      <div class="subtext" id="place-subtext">📍 Alina Harbour Apartments — Real-time 3D GPS distress beacon</div>
+      
+      <div class="coords-bar">
+        <span>📍 <span id="val-lat">-1.290785</span>, <span id="val-lng">36.781769</span></span>
+        <span style="color:#64748b; font-size:11px;" id="last-updated">LIVE</span>
+      </div>
 
-    <div class="distance-pill" id="dist-pill">
-      🧭 Calculating your distance...
-    </div>
+      <div class="distance-pill" id="dist-pill">
+        🧭 Calculating live distance from your location...
+      </div>
 
-    <div class="btn-actions">
-      <a class="btn btn-maps" id="nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=-1.292100,36.821900" target="_blank">
-        🚗 Navigate (Maps)
-      </a>
-      <a class="btn btn-call" href="tel:999">
-        📞 Call Police (999)
-      </a>
+      <div class="btn-actions">
+        <a class="btn btn-maps" id="nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=-1.2907850038543573,36.78176897301627" target="_blank">
+          🚗 Navigate (Maps)
+        </a>
+        <a class="btn btn-call" href="tel:999">
+          📞 Call Police (999)
+        </a>
+      </div>
     </div>
   </div>
 
@@ -325,10 +361,11 @@
     const params = new URLSearchParams(window.location.search);
     const hasIncidentCoords = params.has('lat') && params.has('lng');
     const incidentId = params.get('id') || params.get('session');
-    let curLat = parseFloat(params.get('lat') || '-1.309250'); // Strathmore University main campus
-    let curLng = parseFloat(params.get('lng') || '36.812720');
+    let curLat = parseFloat(params.get('lat') || '-1.2907850038543573'); // Alina Harbour Apartments
+    let curLng = parseFloat(params.get('lng') || '36.78176897301627');
     const rawName = params.get('name');
-    const displayName = rawName || (incidentId ? `Incident #${incidentId}` : 'SafeGuard User');
+    const displayName = rawName || (incidentId ? `Incident #${incidentId}` : 'Joy (Alina Harbour Apartments)');
+    const userName = displayName;
     const mapboxToken = 'pk.eyJ1Ijoiam95a2lwa2VtYm9pIiwiYSI6ImNtY2J2MmlpZTAxbWIya3NhaWV1aTh5MTkifQ.-nLBrGjd639RrXjdXHq3HA';
 
     // Update DOM based on whether an incident link was opened or raw homepage
@@ -341,23 +378,19 @@
       document.getElementById('val-lng').innerText = curLng.toFixed(6);
       document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLng}`;
     } else {
-      document.title = 'SafeGuard 3D Emergency Telemetry Portal';
-      document.getElementById('title-name').innerHTML = '🛡️ SafeGuard Telemetry Portal';
-      document.getElementById('badge-status').innerHTML = '<span style="font-size:8px;">●</span> SYSTEM READY';
-      document.getElementById('badge-status').style.background = '#10b981';
-      document.getElementById('badge-status').style.animation = 'none';
-      document.querySelector('.subtext').innerHTML = 'Awaiting active incident beacon or session link';
-      document.getElementById('val-lat').innerText = '0.000000';
-      document.getElementById('val-lng').innerText = '0.000000';
-      document.getElementById('last-updated').innerText = 'STANDBY';
-      document.getElementById('dist-pill').innerHTML = '🔒 No active coordinates. Tap a link from your emergency SMS.';
-      document.getElementById('nav-btn').innerHTML = '🧪 Demo Incident (Strathmore Univ)';
-      document.getElementById('nav-btn').href = '?lat=-1.309250&lng=36.812720&id=DEMO-SOS-001';
-      document.getElementById('nav-btn').target = '_self';
+      document.title = 'SafeGuard 3D Emergency Telemetry — Alina Harbour Apartments';
+      document.getElementById('title-name').innerHTML = '🚨 SafeGuard 3D Live Tracking';
+      document.getElementById('badge-status').innerHTML = '<span style="font-size:8px;">●</span> SOS ACTIVE';
+      document.getElementById('badge-status').style.background = '#ef4444';
+      document.getElementById('val-lat').innerText = curLat.toFixed(6);
+      document.getElementById('val-lng').innerText = curLng.toFixed(6);
+      document.getElementById('last-updated').innerText = 'LIVE';
+      document.getElementById('nav-btn').href = `https://www.google.com/maps/dir/?api=1&destination=${curLat},${curLng}`;
     }
 
     let mapboxMap = null;
     let mapboxMarker = null;
+    let viewerMarker = null;
     let leafletMap = null;
     let leafletMarker = null;
     let isLeafletActive = false;
@@ -379,18 +412,41 @@
       return R * c;
     }
 
+    function updateDistanceUI(pos) {
+      const vLat = pos.coords.latitude;
+      const vLng = pos.coords.longitude;
+      const dKm = calcDistanceKm(vLat, vLng, curLat, curLng);
+      const pill = document.getElementById('dist-pill');
+      pill.style.display = 'block';
+      if (dKm < 1) {
+        pill.innerHTML = `📍 You are <b>${Math.round(dKm * 1000)} meters</b> away from ${userName}`;
+      } else {
+        pill.innerHTML = `📍 You are <b>${dKm.toFixed(2)} km</b> away from ${userName}`;
+      }
+
+      if (mapboxMap && !isLeafletActive && typeof mapboxgl !== 'undefined') {
+        if (!viewerMarker) {
+          const vEl = document.createElement('div');
+          vEl.style.cssText = 'width:14px;height:14px;border-radius:50%;background:#10b981;border:2px solid #fff;box-shadow:0 0 12px #10b981;';
+          viewerMarker = new mapboxgl.Marker({ element: vEl }).setLngLat([vLng, vLat]).addTo(mapboxMap);
+        } else {
+          viewerMarker.setLngLat([vLng, vLat]);
+        }
+      }
+    }
+
     function trackViewerDistance() {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition((pos) => {
-          const dKm = calcDistanceKm(pos.coords.latitude, pos.coords.longitude, curLat, curLng);
+        navigator.geolocation.getCurrentPosition(updateDistanceUI, () => {
           const pill = document.getElementById('dist-pill');
           pill.style.display = 'block';
-          if (dKm < 1) {
-            pill.innerHTML = `📍 You are <b>${Math.round(dKm * 1000)} meters</b> away from ${userName}`;
-          } else {
-            pill.innerHTML = `📍 You are <b>${dKm.toFixed(1)} km</b> away from ${userName}`;
-          }
-        }, () => {});
+          pill.innerHTML = `📍 Target: <b>Alina Harbour Apartments</b> (${curLat.toFixed(6)}, ${curLng.toFixed(6)}) — Enable location to calculate live distance`;
+        }, { enableHighAccuracy: true, timeout: 8000 });
+
+        navigator.geolocation.watchPosition(updateDistanceUI, () => {}, {
+          enableHighAccuracy: true,
+          maximumAge: 3000
+        });
       }
     }
     trackViewerDistance();
@@ -402,6 +458,15 @@
       return el;
     }
 
+    function toggleCard() {
+      const card = document.getElementById('emergency-card');
+      const btn = document.getElementById('btn-toggle-card');
+      if (!card || !btn) return;
+      card.classList.toggle('collapsed');
+      const isCollapsed = card.classList.contains('collapsed');
+      btn.innerText = isCollapsed ? '▲ Details' : '▼ Hide';
+    }
+
     function initMapbox() {
       try {
         if (!mapboxToken || typeof mapboxgl === 'undefined' || !mapboxgl.supported()) {
@@ -411,18 +476,28 @@
         }
 
         mapboxgl.accessToken = mapboxToken;
+        const isMobile = window.innerWidth <= 600;
         mapboxMap = new mapboxgl.Map({
           container: 'mapbox-map',
           style: 'mapbox://styles/mapbox/dark-v11',
           center: [curLng, curLat],
-          zoom: 16.8,
-          pitch: 62,
-          bearing: -25,
+          zoom: 17.2,
+          pitch: 60,
+          bearing: -20,
           antialias: true
         });
 
         mapboxMap.on('load', () => {
           hideLoader();
+
+          // Smoothly frame the Alina Harbour 3D position so it is fully visible without scrolling
+          mapboxMap.flyTo({
+            center: [curLng, curLat],
+            zoom: 17.2,
+            pitch: 60,
+            bearing: -20,
+            essential: true
+          });
 
           // 1. Add 3D Digital Elevation Model (DEM) Terrain
           try {
@@ -541,9 +616,9 @@
 
     function recenter() {
       if (mapboxMap && !isLeafletActive) {
-        mapboxMap.flyTo({ center: [curLng, curLat], zoom: 16.5, essential: true });
+        mapboxMap.flyTo({ center: [curLng, curLat], zoom: 17.2, pitch: 60, bearing: -20, essential: true });
       } else if (leafletMap) {
-        leafletMap.panTo([curLat, curLng]);
+        leafletMap.setView([curLat, curLng], 17);
       }
     }
 

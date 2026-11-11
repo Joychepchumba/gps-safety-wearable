@@ -30,179 +30,190 @@ class ContactsScreen extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            decoration: BoxDecoration(
-              color: ctx.cardBg,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 44,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: ctx.cardBorder,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+              ),
+              decoration: BoxDecoration(
+                color: ctx.cardBg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 28),
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          isEditing ? Icons.edit_rounded : Icons.person_add_rounded,
-                          color: AppColors.primary,
-                          size: 22,
+                      Center(
+                        child: Container(
+                          width: 44,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: ctx.cardBorder,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              isEditing ? Icons.edit_rounded : Icons.person_add_rounded,
+                              color: AppColors.primary,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              isEditing ? 'Edit Emergency Contact' : 'Add Emergency Contact',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: ctx.textPrimary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
                       Text(
-                        isEditing ? 'Edit Emergency Contact' : 'Add Emergency Contact',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: ctx.textPrimary,
+                        'This contact will receive instant SMS alerts and live 3D Mapbox tracking links during SOS.',
+                        style: TextStyle(fontSize: 13, color: ctx.textSecondary, height: 1.3),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Name
+                      Text('Contact Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: nameController,
+                        style: TextStyle(fontSize: 15, color: ctx.textPrimary),
+                        validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a name' : null,
+                        decoration: InputDecoration(
+                          hintText: 'e.g. Mom, Primary Guardian, Dad',
+                          hintStyle: TextStyle(color: ctx.textMuted),
+                          prefixIcon: Icon(Icons.person_outline_rounded, color: ctx.textSecondary, size: 20),
+                          filled: true,
+                          fillColor: ctx.inputBg,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Phone
+                      Text('Phone Number', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: phoneController,
+                        keyboardType: TextInputType.phone,
+                        style: TextStyle(fontSize: 15, color: ctx.textPrimary),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) return 'Please enter a phone number';
+                          if (v.trim().length < 8) return 'Enter a valid phone number';
+                          return null;
+                        },
+                        decoration: InputDecoration(
+                          hintText: '+254 700 000 000',
+                          hintStyle: TextStyle(color: ctx.textMuted),
+                          prefixIcon: Icon(Icons.phone_outlined, color: ctx.textSecondary, size: 20),
+                          filled: true,
+                          fillColor: ctx.inputBg,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Email
+                      Text('Email Address (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        style: TextStyle(fontSize: 15, color: ctx.textPrimary),
+                        decoration: InputDecoration(
+                          hintText: 'guardian@example.com',
+                          hintStyle: TextStyle(color: ctx.textMuted),
+                          prefixIcon: Icon(Icons.email_outlined, color: ctx.textSecondary, size: 20),
+                          filled: true,
+                          fillColor: ctx.inputBg,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
+                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (!formKey.currentState!.validate()) return;
+                          final name = nameController.text.trim();
+                          final phone = phoneController.text.trim();
+                          final email = emailController.text.trim();
+
+                          Navigator.pop(ctx);
+                          try {
+                            if (isEditing) {
+                              await controller.updateContact(
+                                id: contact.id,
+                                name: name,
+                                phone: phone,
+                                email: email.isNotEmpty ? email : null,
+                              );
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Updated $name successfully!'), backgroundColor: AppColors.success),
+                                );
+                              }
+                            } else {
+                              await controller.addContact(name, phone, email.isNotEmpty ? email : null);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Added $name successfully!'), backgroundColor: AppColors.success),
+                                );
+                              }
+                            }
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Notice: $e'), backgroundColor: AppColors.error),
+                              );
+                            }
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          isEditing ? 'Save Changes' : 'Add Guardian Contact',
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'This contact will receive instant SMS alerts and live 3D Mapbox tracking links during SOS.',
-                    style: TextStyle(fontSize: 13, color: ctx.textSecondary, height: 1.3),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Name
-                  Text('Contact Name', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: nameController,
-                    style: TextStyle(fontSize: 15, color: ctx.textPrimary),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a name' : null,
-                    decoration: InputDecoration(
-                      hintText: 'e.g. Mom, Joy (Primary), Dad',
-                      hintStyle: TextStyle(color: ctx.textMuted),
-                      prefixIcon: Icon(Icons.person_outline_rounded, color: ctx.textSecondary, size: 20),
-                      filled: true,
-                      fillColor: ctx.inputBg,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Phone
-                  Text('Phone Number', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: phoneController,
-                    keyboardType: TextInputType.phone,
-                    style: TextStyle(fontSize: 15, color: ctx.textPrimary),
-                    validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Please enter a phone number';
-                      if (v.trim().length < 8) return 'Enter a valid phone number';
-                      return null;
-                    },
-                    decoration: InputDecoration(
-                      hintText: '+254 700 000 000',
-                      hintStyle: TextStyle(color: ctx.textMuted),
-                      prefixIcon: Icon(Icons.phone_outlined, color: ctx.textSecondary, size: 20),
-                      filled: true,
-                      fillColor: ctx.inputBg,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: ctx.cardBorder)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Email
-                  Text('Email Address (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ctx.textPrimary)),
-                  const SizedBox(height: 6),
-                  TextFormField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    style: const TextStyle(fontSize: 15, color: AppColors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'guardian@example.com',
-                      prefixIcon: const Icon(Icons.email_outlined, color: AppColors.textSecondary, size: 20),
-                      filled: true,
-                      fillColor: AppColors.surface,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.border)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  ElevatedButton(
-                    onPressed: () async {
-                      if (!formKey.currentState!.validate()) return;
-                      final name = nameController.text.trim();
-                      final phone = phoneController.text.trim();
-                      final email = emailController.text.trim();
-
-                      Navigator.pop(ctx);
-                      try {
-                        if (isEditing) {
-                          await controller.updateContact(
-                            id: contact.id,
-                            name: name,
-                            phone: phone,
-                            email: email.isNotEmpty ? email : null,
-                          );
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Updated $name successfully!'), backgroundColor: AppColors.success),
-                            );
-                          }
-                        } else {
-                          await controller.addContact(name, phone, email.isNotEmpty ? email : null);
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Added $name successfully!'), backgroundColor: AppColors.success),
-                            );
-                          }
-                        }
-                      } catch (e) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Notice: $e'), backgroundColor: AppColors.error),
-                          );
-                        }
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      isEditing ? 'Save Changes' : 'Add Guardian Contact',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -215,17 +226,17 @@ class ContactsScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: ctx.cardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Remove Contact', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+        title: Text('Remove Contact', style: TextStyle(fontWeight: FontWeight.w800, color: ctx.textPrimary)),
         content: Text(
           'Are you sure you want to remove ${contact.contactName} (${contact.phoneNumber}) from your emergency contacts?',
-          style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
+          style: TextStyle(color: ctx.textSecondary, fontSize: 14),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.bold)),
+            child: Text('Cancel', style: TextStyle(color: ctx.textSecondary, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -326,15 +337,18 @@ class ContactsScreen extends StatelessWidget {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    '$count of 3 Guardians Added',
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.textPrimary,
+                                  Expanded(
+                                    child: Text(
+                                      '$count of 3 Guardians Added',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        color: context.textPrimary,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const Spacer(),
+                                  const SizedBox(width: 8),
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                     decoration: BoxDecoration(
@@ -353,9 +367,9 @@ class ContactsScreen extends StatelessWidget {
                                 ],
                               ),
                               const SizedBox(height: 4),
-                              const Text(
+                              Text(
                                 'During an emergency, SIM800L sends automated SMS alerts and call dispatch directly to these numbers.',
-                                style: TextStyle(fontSize: 12, color: AppColors.textSecondary, height: 1.3),
+                                style: TextStyle(fontSize: 12, color: context.textSecondary, height: 1.3),
                               ),
                             ],
                           ),
@@ -527,6 +541,8 @@ class ContactsScreen extends StatelessWidget {
                                           color: context.textSecondary,
                                           fontWeight: FontWeight.w600,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       if (contact.email != null && contact.email!.isNotEmpty) ...[
                                         const SizedBox(height: 2),
@@ -542,7 +558,7 @@ class ContactsScreen extends StatelessWidget {
                               ],
                             ),
                             const SizedBox(height: 12),
-                            const Divider(color: AppColors.border, height: 1),
+                            Divider(color: context.cardBorder, height: 1),
                             const SizedBox(height: 10),
 
                             // Action Buttons Row (Call, Edit, Delete)
@@ -551,13 +567,13 @@ class ContactsScreen extends StatelessWidget {
                                 // Call Button
                                 OutlinedButton.icon(
                                   onPressed: () => _callNumber(contact.phoneNumber),
-                                  icon: const Icon(Icons.phone_in_talk_rounded, size: 16, color: AppColors.success),
+                                  icon: const Icon(Icons.phone_in_talk_rounded, size: 15, color: AppColors.success),
                                   label: const Text('Call', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.success)),
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(color: AppColors.success),
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    minimumSize: const Size(60, 32),
+                                    minimumSize: const Size(0, 32),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -565,13 +581,13 @@ class ContactsScreen extends StatelessWidget {
                                 // Edit Button
                                 OutlinedButton.icon(
                                   onPressed: () => _showAddEditSheet(context, controller, contact: contact),
-                                  icon: const Icon(Icons.edit_rounded, size: 16, color: AppColors.primary),
+                                  icon: const Icon(Icons.edit_rounded, size: 15, color: AppColors.primary),
                                   label: const Text('Edit', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primary)),
                                   style: OutlinedButton.styleFrom(
                                     side: const BorderSide(color: AppColors.primary),
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                    minimumSize: const Size(60, 32),
+                                    minimumSize: const Size(0, 32),
                                   ),
                                 ),
                                 const Spacer(),
@@ -581,6 +597,8 @@ class ContactsScreen extends StatelessWidget {
                                   icon: const Icon(Icons.delete_outline_rounded, color: AppColors.sosRed, size: 20),
                                   onPressed: () => _confirmDelete(context, controller, contact),
                                   tooltip: 'Delete Contact',
+                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.all(8),
                                 ),
                               ],
                             ),

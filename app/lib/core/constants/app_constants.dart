@@ -8,8 +8,15 @@ class AppConstants {
   static const int panicCountdownSeconds = 10;
   static const int locationAnonymisationHours = 24;
 
-  static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL', defaultValue: '');
-  static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY', defaultValue: '');
+  static const String supabaseUrl = String.fromEnvironment(
+    'SUPABASE_URL',
+    defaultValue: 'https://afagwdhpjnnbueiyjmde.supabase.co',
+  );
+  static const String supabaseAnonKey = String.fromEnvironment(
+    'SUPABASE_ANON_KEY',
+    defaultValue:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmYWd3ZGhwam5uYnVlaXlqbWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTkzMzUsImV4cCI6MjEwNTQ5NTMzNX0.Qw_rs_KJOZF8RkXWW62QBKnSafzJFkt9YBPqCRo9mlA',
+  );
 
   static const String africasTalkingApiKey = String.fromEnvironment(
     'AT_API_KEY',
@@ -27,7 +34,7 @@ class AppConstants {
 
   static const String backendBaseUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: 'https://8331-105-164-105-145.ngrok-free.app',
+    defaultValue: 'https://unpaved-coherent-encroach.ngrok-free.dev',
   );
 
   static String? _cachedDynamicBackendUrl;
@@ -61,6 +68,8 @@ class AppConstants {
   static const String bleServiceUUID = 'ffe0';
   static const String bleAlertCharUUID = 'ffe1';
   static const String bleConfigCharUUID = 'ffe2';
+  static const String bleStatusCharUUID = 'ffe3';
+  static const int bleSosManufacturerId = 0xFFFF;
 
   /// Permanent, serverless 3D Mapbox live tracking viewer hosted on GitHub Pages
   static const String trackingViewerBaseUrl = String.fromEnvironment(
@@ -88,4 +97,3 @@ class AppConstants {
     return uri.toString();
   }
 }
-

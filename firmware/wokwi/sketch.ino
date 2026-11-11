@@ -160,10 +160,10 @@ bool waitGpsFix(uint32_t ms) {
 }
 
 double getLat() {
-  return gpsParser.location.isValid() ? gpsParser.location.lat() : -1.2921;
+  return gpsParser.location.isValid() ? gpsParser.location.lat() : -1.31122;
 }
 double getLng() {
-  return gpsParser.location.isValid() ? gpsParser.location.lng() : 36.8219;
+  return gpsParser.location.isValid() ? gpsParser.location.lng() : 36.81953;
 }
 
 // ═════════════════════════════════════════════════════════════════

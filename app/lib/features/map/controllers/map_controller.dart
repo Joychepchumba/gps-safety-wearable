@@ -189,8 +189,8 @@ class MapController extends ChangeNotifier {
   void _useFallbackLocation() {
     // Nairobi city center fallback
     currentPosition ??= Position(
-      latitude: -1.2921,
-      longitude: 36.8219,
+      latitude: -1.31122,
+      longitude: 36.81953,
       timestamp: DateTime.now(),
       accuracy: 10.0,
       altitude: 1795.0,
@@ -220,8 +220,8 @@ class MapController extends ChangeNotifier {
           .eq('is_community_responder', true)
           .eq('responder_status', 'available');
 
-      final baseLat = currentPosition?.latitude ?? -1.2921;
-      final baseLng = currentPosition?.longitude ?? 36.8219;
+      final baseLat = currentPosition?.latitude ?? -1.31122;
+      final baseLng = currentPosition?.longitude ?? 36.81953;
 
       int idx = 0;
       nearbyResponders = (res as List).map((u) {
@@ -269,8 +269,8 @@ class MapController extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Error loading responders: $e');
-      final baseLat = currentPosition?.latitude ?? -1.2921;
-      final baseLng = currentPosition?.longitude ?? 36.8219;
+      final baseLat = currentPosition?.latitude ?? -1.31122;
+      final baseLng = currentPosition?.longitude ?? 36.81953;
       nearbyResponders = [
         {
           'id': 'resp-1',
@@ -286,8 +286,8 @@ class MapController extends ChangeNotifier {
   }
 
   Future<void> loadEmergencyContactsForMap() async {
-    final baseLat = currentPosition?.latitude ?? -1.2921;
-    final baseLng = currentPosition?.longitude ?? 36.8219;
+    final baseLat = currentPosition?.latitude ?? -1.31122;
+    final baseLng = currentPosition?.longitude ?? 36.81953;
 
     try {
       List<EmergencyContactModel> rawContacts = [];
@@ -351,8 +351,8 @@ class MapController extends ChangeNotifier {
 
   /// Generate Mapbox 3D live tracking link
   Future<String> getLiveTrackingLink() async {
-    final lat = currentPosition?.latitude ?? -1.2921;
-    final lng = currentPosition?.longitude ?? 36.8219;
+    final lat = currentPosition?.latitude ?? -1.31122;
+    final lng = currentPosition?.longitude ?? 36.81953;
     final user = _supabaseService.currentUser;
     final userName = user?.userMetadata?['full_name'] ?? 'SafeGuard User';
     return AppConstants.buildLiveTrackingUrl(
@@ -367,8 +367,8 @@ class MapController extends ChangeNotifier {
     int hours = 2,
     List<String>? targetContactPhones,
   }) async {
-    final lat = currentPosition?.latitude ?? -1.2921;
-    final lng = currentPosition?.longitude ?? 36.8219;
+    final lat = currentPosition?.latitude ?? -1.31122;
+    final lng = currentPosition?.longitude ?? 36.81953;
     final user = _supabaseService.currentUser;
     final userName = user?.userMetadata?['full_name'] ?? 'SafeLink User';
     final token = 'session_${DateTime.now().millisecondsSinceEpoch}';
@@ -426,8 +426,8 @@ class MapController extends ChangeNotifier {
     try {
       final user = _supabaseService.currentUser;
       if (user == null) return 0;
-      final lat = currentPosition?.latitude ?? -1.2921;
-      final lng = currentPosition?.longitude ?? 36.8219;
+      final lat = currentPosition?.latitude ?? -1.31122;
+      final lng = currentPosition?.longitude ?? 36.81953;
 
       final List res = await _supabaseService.client
           .from('users')

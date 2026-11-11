@@ -33,7 +33,7 @@ class UserModel {
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
-      id: json['id'],
+      id: json['id'].toString(),
       fullName: json['full_name'] ?? '',
       phoneNumber: json['phone_number'] ?? '',
       email: json['email'] ?? '',
@@ -45,9 +45,34 @@ class UserModel {
       hasWearable: json['has_wearable'] ?? false,
       hasEmergencyPassword: json['emergency_password_hash'] != null && json['emergency_password_hash'].toString().isNotEmpty,
       pushToken: json['push_token'],
-      createdAt: DateTime.parse(json['created_at']),
-      updatedAt: DateTime.parse(json['updated_at']),
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ?? DateTime.now(),
     );
+  }
+
+  /// Single, shared display-name logic used by every screen (Home, Profile,
+  /// Community, etc.) so the user's name is always rendered identically.
+  String get displayName {
+    final name = fullName.trim();
+    if (name.isNotEmpty && name != 'SafeLink User') return name;
+    if (email.contains('@')) {
+      final prefix = email.split('@').first.trim();
+      if (prefix.isNotEmpty) {
+        return prefix[0].toUpperCase() + prefix.substring(1);
+      }
+    }
+    return 'SafeLink User';
+  }
+
+  /// First word of [displayName] (used for greetings).
+  String get firstName => displayName.split(RegExp(r'\s+')).first;
+
+  /// Up to two initials derived from [displayName].
+  String get initials {
+    final parts = displayName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) return parts.first[0].toUpperCase();
+    return (parts.first[0] + parts.last[0]).toUpperCase();
   }
 
   Map<String, dynamic> toJson() {
@@ -79,6 +104,7 @@ class UserModel {
     DateTime? responderOptedInAt,
     DateTime? responderOptedOutAt,
     bool? hasWearable,
+    bool? hasEmergencyPassword,
     String? pushToken,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -94,6 +120,7 @@ class UserModel {
       responderOptedInAt: responderOptedInAt ?? this.responderOptedInAt,
       responderOptedOutAt: responderOptedOutAt ?? this.responderOptedOutAt,
       hasWearable: hasWearable ?? this.hasWearable,
+      hasEmergencyPassword: hasEmergencyPassword ?? this.hasEmergencyPassword,
       pushToken: pushToken ?? this.pushToken,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
