@@ -287,7 +287,8 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
     if (!mounted) return;
     setState(() => _isLoadingCloud = true);
     try {
-      final myUserId = context.read<AuthController>().currentUser?.id;
+      final authUser = context.read<AuthController>().currentUser;
+      final myUserId = authUser?.id;
 
       // 1. Fetch active panic events from Supabase (using schema-accurate columns)
       try {
@@ -377,13 +378,12 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
         final responders = List<Map<String, dynamic>>.from(respondersData as List);
 
         // Ensure logged-in user is always present if opted-in as responder
-        final currentUser = context.read<AuthController>().currentUser;
-        if (currentUser != null && (currentUser.isCommunityResponder || _responderStatus != 'offline')) {
-          final alreadyPresent = responders.any((r) => r['id'] == currentUser.id);
+        if (authUser != null && (authUser.isCommunityResponder || _responderStatus != 'offline')) {
+          final alreadyPresent = responders.any((r) => r['id'] == authUser.id);
           if (!alreadyPresent) {
             responders.insert(0, {
-              'id': currentUser.id,
-              'full_name': currentUser.fullName.isNotEmpty ? currentUser.fullName : 'You',
+              'id': authUser.id,
+              'full_name': authUser.fullName.isNotEmpty ? authUser.fullName : 'You',
               'responder_status': _responderStatus,
               'is_community_responder': true,
             });
@@ -397,14 +397,13 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
         }
       } catch (e) {
         debugPrint('[COMMUNITY] Error fetching responders: $e');
-        final currentUser = context.read<AuthController>().currentUser;
-        if (currentUser != null && (currentUser.isCommunityResponder || _responderStatus != 'offline')) {
+        if (authUser != null && (authUser.isCommunityResponder || _responderStatus != 'offline')) {
           if (mounted) {
             setState(() {
               _communityResponders = [
                 {
-                  'id': currentUser.id,
-                  'full_name': currentUser.fullName.isNotEmpty ? currentUser.fullName : 'You',
+                  'id': authUser.id,
+                  'full_name': authUser.fullName.isNotEmpty ? authUser.fullName : 'You',
                   'responder_status': _responderStatus,
                   'is_community_responder': true,
                 }
