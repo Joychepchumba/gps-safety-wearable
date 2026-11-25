@@ -37,6 +37,7 @@ class BleDistressBeacon {
   final int rssi;
   final double estimatedDistanceMeters;
   final DateTime detectedAt;
+  final DateTime firstDetectedAt;
   final String? resolvedUserName;
   final String? resolvedPhone;
 
@@ -50,9 +51,25 @@ class BleDistressBeacon {
     required this.rssi,
     required this.estimatedDistanceMeters,
     required this.detectedAt,
+    DateTime? firstDetectedAt,
     this.resolvedUserName,
     this.resolvedPhone,
-  });
+  }) : firstDetectedAt = firstDetectedAt ?? detectedAt;
+
+  Duration get broadcastDuration => DateTime.now().difference(firstDetectedAt);
+
+  String get broadcastDurationFormatted {
+    final d = broadcastDuration;
+    if (d.inSeconds < 60) {
+      return '${d.inSeconds}s';
+    } else if (d.inMinutes < 60) {
+      final secs = d.inSeconds % 60;
+      return '${d.inMinutes}m ${secs}s';
+    } else {
+      final mins = d.inMinutes % 60;
+      return '${d.inHours}h ${mins}m';
+    }
+  }
 
   BleDistressBeacon copyWith({
     String? resolvedUserName,
@@ -62,6 +79,7 @@ class BleDistressBeacon {
     double? latitude,
     double? longitude,
     DateTime? detectedAt,
+    DateTime? firstDetectedAt,
   }) {
     return BleDistressBeacon(
       id: id,
@@ -73,6 +91,7 @@ class BleDistressBeacon {
       rssi: rssi ?? this.rssi,
       estimatedDistanceMeters: estimatedDistanceMeters ?? this.estimatedDistanceMeters,
       detectedAt: detectedAt ?? this.detectedAt,
+      firstDetectedAt: firstDetectedAt ?? this.firstDetectedAt,
       resolvedUserName: resolvedUserName ?? this.resolvedUserName,
       resolvedPhone: resolvedPhone ?? this.resolvedPhone,
     );
@@ -96,6 +115,8 @@ class BleService {
   StreamSubscription? _scanSub;
   BluetoothDevice? _connectedDevice;
   BluetoothCharacteristic? _configCharacteristic;
+  bool _isConnectingPendant = false;
+  DateTime? _lastPendantSosEmitAt;
 
   final FlutterBlePeripheral _blePeripheral = FlutterBlePeripheral();
   bool _isBroadcastingSosBeacon = false;
@@ -282,19 +303,34 @@ class BleService {
       _scanSub = FlutterBluePlus.onScanResults.listen((results) {
         bool beaconsUpdated = false;
         for (final ScanResult r in results) {
-          final name = r.device.platformName;
+          final advName = r.advertisementData.advName;
+          final platName = r.device.platformName;
+          final devName = (advName.isNotEmpty ? advName : platName).toLowerCase();
           final hasService = r.advertisementData.serviceUuids.any(
             (uuid) => uuid.toString().toLowerCase().contains(AppConstants.bleServiceUUID),
           );
 
           // 1. Check for SafeGuard Pendant devices
-          if (name.toLowerCase().contains('safeguard') ||
-              name.toLowerCase().contains('safelink') ||
+          if (devName.contains('safeguard') ||
+              devName.contains('safelink') ||
               hasService) {
             _pendantDetectedController.add(true);
             if (!foundDevices.any((d) => d.remoteId == r.device.remoteId)) {
               foundDevices.add(r.device);
               _discoveredDevicesController.add(List.unmodifiable(foundDevices));
+            }
+            // Auto-connect to SafeGuard ESP32 pendant over GATT when discovered
+            if (!isConnected && !_isConnectingPendant) {
+              _isConnectingPendant = true;
+              final uid = _client.auth.currentUser?.id ??
+                  '7426cae6-d358-4a02-9e2f-c7839a864e93';
+              unawaited(
+                pairDevice(r.device, uid).catchError((e) {
+                  debugPrint('[BLE AUTO-CONNECT] Error pairing: $e');
+                }).whenComplete(() {
+                  _isConnectingPendant = false;
+                }),
+              );
             }
           }
 
@@ -308,11 +344,26 @@ class BleService {
               rssi: r.rssi,
             );
             if (beacon != null) {
-              _activeBeacons[beacon.userTagHex] = beacon;
+              final existing = _activeBeacons[beacon.userTagHex];
+              final updatedBeacon = existing != null
+                  ? beacon.copyWith(
+                      firstDetectedAt: existing.firstDetectedAt,
+                      resolvedUserName: existing.resolvedUserName ?? beacon.resolvedUserName,
+                      resolvedPhone: existing.resolvedPhone ?? beacon.resolvedPhone,
+                    )
+                  : beacon;
+              _activeBeacons[beacon.userTagHex] = updatedBeacon;
               beaconsUpdated = true;
               debugPrint(
-                '🆘 [BLE RADAR] Detected distress beacon ${beacon.userTagHex} (${beacon.sourceType}) at ${beacon.latitude}, ${beacon.longitude} (~${beacon.estimatedDistanceMeters.toStringAsFixed(1)}m)',
+                '🆘 [BLE RADAR] Distress beacon ${updatedBeacon.userTagHex} (${updatedBeacon.sourceType}) active for ${updatedBeacon.broadcastDurationFormatted} at ${updatedBeacon.latitude}, ${updatedBeacon.longitude} (~${updatedBeacon.estimatedDistanceMeters.toStringAsFixed(1)}m)',
               );
+              // Ensure any pendant BLE SOS beacon also triggers the app's Emergency SOS listener
+              if (beacon.sourceType == 'pendant_ble') {
+                _emitDeduplicatedPendantSos(
+                  code: 0x02,
+                  reason: 'pendant_ble_beacon',
+                );
+              }
             }
           }
         }
@@ -373,8 +424,70 @@ class BleService {
     _scanSub = null;
   }
 
+  void _emitDeduplicatedPendantSos({
+    required int code,
+    required String reason,
+  }) {
+    final now = DateTime.now();
+    if (_lastPendantSosEmitAt != null &&
+        now.difference(_lastPendantSosEmitAt!) < const Duration(seconds: 12)) {
+      return;
+    }
+    _lastPendantSosEmitAt = now;
+    _pendantAlertController.add(true);
+    _pendantEventController.add(PendantAlertEvent(code: code, reason: reason));
+  }
+
+  /// Automatically scans for and connects to the SafeGuard ESP32 pendant if not yet connected.
+  Future<bool> autoConnectToPendant({
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    if (isConnected && _configCharacteristic != null) return true;
+
+    // 1. Check system-connected Bluetooth devices first
+    try {
+      final sysDevices = FlutterBluePlus.connectedDevices;
+      for (final d in sysDevices) {
+        final name = d.platformName.toLowerCase();
+        if (name.contains('safeguard') || name.contains('safelink')) {
+          final uid = _client.auth.currentUser?.id ??
+              '7426cae6-d358-4a02-9e2f-c7839a864e93';
+          await pairDevice(d, uid);
+          if (isConnected && _configCharacteristic != null) {
+            debugPrint('[BLE AUTO-CONNECT] Connected via existing system connection: ${d.remoteId.str}');
+            return true;
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('[BLE AUTO-CONNECT] Error checking system devices: $e');
+    }
+
+    // 2. Active BLE scan if not already paired
+    final devices = await startScan(timeout: timeout);
+    if (isConnected && _configCharacteristic != null) return true;
+    if (devices.isNotEmpty) {
+      final uid = _client.auth.currentUser?.id ??
+          '7426cae6-d358-4a02-9e2f-c7839a864e93';
+      try {
+        await pairDevice(devices.first, uid);
+        return isConnected && _configCharacteristic != null;
+      } catch (e) {
+        debugPrint('[BLE AUTO-CONNECT] Error pairing discovered device: $e');
+      }
+    }
+    return isConnected && _configCharacteristic != null;
+  }
+
   Future<void> pairDevice(BluetoothDevice device, String userId) async {
-    await device.connect(license: License.nonprofit);
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {}
+    await device.connect(
+      license: License.nonprofit,
+      autoConnect: false,
+      timeout: const Duration(seconds: 8),
+    );
     _connectedDevice = device;
     final List<BluetoothService> services = await device.discoverServices();
     for (final BluetoothService service in services) {
@@ -392,8 +505,7 @@ class BleService {
                 final reason = code == 0x02
                     ? 'pendant_voice'
                     : (code == 0x03 ? 'remote_guardian' : 'pendant_touch');
-                _pendantAlertController.add(true);
-                _pendantEventController.add(PendantAlertEvent(code: code, reason: reason));
+                _emitDeduplicatedPendantSos(code: code, reason: reason);
 
                 // Also emit directly into the BLE distress beacon stream & re-broadcast
                 try {
@@ -463,6 +575,12 @@ class BleService {
                   if (jsonStr.startsWith('{')) {
                     final decoded = jsonDecode(jsonStr) as Map<String, dynamic>;
                     _pendantStatusController.add(decoded);
+                    if (decoded['sos'] == 1 || decoded['sos'] == true) {
+                      _emitDeduplicatedPendantSos(
+                        code: 0x02,
+                        reason: decoded['reason']?.toString() ?? 'pendant_voice',
+                      );
+                    }
                   }
                 } catch (_) {}
               });
@@ -472,24 +590,37 @@ class BleService {
       }
     }
 
-    await _client.from('wearable_devices').upsert({
-      'user_id': userId,
-      'device_mac': device.remoteId.str,
-      'device_name': device.platformName.isNotEmpty ? device.platformName : 'SafeLink Pendant #JK001',
-      'paired_at': DateTime.now().toIso8601String(),
-      'last_seen_at': DateTime.now().toIso8601String(),
-      'is_active': true,
-    });
+    try {
+      await _client.from('wearable_devices').upsert({
+        'user_id': userId,
+        'device_mac': device.remoteId.str,
+        'device_name': device.platformName.isNotEmpty ? device.platformName : 'SafeLink Pendant #JK001',
+        'paired_at': DateTime.now().toIso8601String(),
+        'last_seen_at': DateTime.now().toIso8601String(),
+        'is_active': true,
+      });
+    } catch (e) {
+      debugPrint('[BLE PAIR] Supabase sync notice (non-fatal): $e');
+    }
   }
 
   /// Sends a protocol v2.1 command to the connected SafeLink Pendant over BLE (`ffe2`).
   /// Examples: `MODE:CHILD`, `MODE:ADULT`, `TOUCH:OFF`, `TOUCH:ON`, `HOLD:3000`,
-  /// `CMD:LOCATE`, `CMD:CALL:+254...`, `CMD:FIND`, `CMD:SOS`, `CMD:CANCEL`, `CMD:STATUS`.
+  /// `CMD:LOCATE`, `CMD:CALL:+254...`, `CMD:FIND`, `CMD:BLINK`, `CMD:SOS`, `CMD:CANCEL`, `CMD:STATUS`.
   Future<bool> sendPendantCommand(String command) async {
     try {
+      if (_configCharacteristic == null || !isConnected) {
+        debugPrint('[BLE CMD] Not yet GATT-connected; auto-scanning for SafeGuard ESP32...');
+        await autoConnectToPendant(timeout: const Duration(seconds: 4));
+      }
       if (_configCharacteristic != null && isConnected) {
-        await _configCharacteristic!.write(utf8.encode(command));
-        debugPrint('[BLE CMD] Sent to pendant: $command');
+        final bytes = utf8.encode(command);
+        try {
+          await _configCharacteristic!.write(bytes, withoutResponse: false);
+        } catch (_) {
+          await _configCharacteristic!.write(bytes, withoutResponse: true);
+        }
+        debugPrint('[BLE CMD] Sent to ESP32 pendant over GATT (ffe2): $command');
         return true;
       }
       debugPrint('[BLE CMD] Pendant not directly connected over GATT; command queued/simulated: $command');

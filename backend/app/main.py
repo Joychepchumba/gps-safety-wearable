@@ -38,6 +38,17 @@ app.include_router(voice_routes.router)
 async def startup_event():
     logger.info("GPS Safety Wearable Backend is starting up...")
     ngrok_url = run_auto_sync(8000)
+    
+    # 24-Hour Location Anonymisation Check (REQ-F10)
+    try:
+        from app.routes.alert_routes import get_supabase
+        from app.services.location_service import anonymise_24h_location_data
+        sb = get_supabase()
+        anon_res = anonymise_24h_location_data(sb)
+        logger.info(f"[PRIVACY] 24-Hour Location Anonymisation Check Completed: {anon_res}")
+    except Exception as e:
+        logger.debug(f"Startup anonymisation check note: {e}")
+
     print("\n" + "=" * 55)
     print("  SAFEGUARD / SAFELINK BACKEND READY")
     print("  Local API:  http://localhost:8000")

@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS public.users (
     
     has_wearable BOOLEAN DEFAULT false NOT NULL,
     push_token TEXT,
+    
+    -- Last Known Location & Anonymisation (REQ-F10)
+    last_latitude DOUBLE PRECISION,
+    last_longitude DOUBLE PRECISION,
+    last_location_updated_at TIMESTAMPTZ,
+    is_location_anonymised BOOLEAN DEFAULT false NOT NULL,
+    anonymised_at TIMESTAMPTZ,
+    
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
@@ -143,14 +151,32 @@ CREATE TABLE IF NOT EXISTS public.realtime_gps_logs (
     id BIGSERIAL PRIMARY KEY,
     panic_event_id UUID REFERENCES public.panic_events(id) ON DELETE CASCADE,
     user_id UUID REFERENCES public.users(id) ON DELETE RESTRICT NOT NULL,
-    latitude DOUBLE PRECISION NOT NULL,
-    longitude DOUBLE PRECISION NOT NULL,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
     accuracy_m REAL,
     recorded_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     is_anonymised BOOLEAN DEFAULT false NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_gps_logs_user_time ON public.realtime_gps_logs(user_id, recorded_at DESC);
+
+-- ─── LOCATIONS (HISTORICAL & REALTIME TRACKING) ───────────
+CREATE TABLE IF NOT EXISTS public.locations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
+    panic_event_id UUID REFERENCES public.panic_events(id) ON DELETE SET NULL,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
+    accuracy_m REAL,
+    is_anonymised BOOLEAN DEFAULT false NOT NULL,
+    anonymised_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    recorded_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_locations_user_time ON public.locations(user_id, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_locations_panic ON public.locations(panic_event_id);
+CREATE INDEX IF NOT EXISTS idx_locations_anonymised ON public.locations(is_anonymised, recorded_at);
 
 -- ─── LOCATION SHARING SESSIONS ───────────────────────────
 CREATE TABLE IF NOT EXISTS public.location_sharing_sessions (
@@ -227,40 +253,101 @@ DROP TRIGGER IF EXISTS update_panic_events_updated_at ON public.panic_events;
 CREATE TRIGGER update_panic_events_updated_at BEFORE UPDATE ON public.panic_events FOR EACH ROW EXECUTE PROCEDURE public.set_updated_at();
 
 
+CREATE OR REPLACE FUNCTION public.anonymise_24h_location_data()
+RETURNS jsonb AS $$
+DECLARE
+    v_panic_count INT := 0;
+    v_locations_count INT := 0;
+    v_gps_count INT := 0;
+    v_users_count INT := 0;
+BEGIN
+    -- 1. Anonymise panic_events older than 24 hours
+    UPDATE public.panic_events
+    SET 
+        latitude = NULL,
+        longitude = NULL,
+        location_accuracy_m = NULL,
+        is_location_anonymised = true,
+        anonymised_at = now()
+    WHERE (
+        (resolved_at IS NOT NULL AND resolved_at < now() - INTERVAL '24 hours')
+        OR (triggered_at < now() - INTERVAL '24 hours')
+    )
+    AND (is_location_anonymised = false OR latitude IS NOT NULL);
+    GET DIAGNOSTICS v_panic_count = ROW_COUNT;
+
+    -- 2. Anonymise locations table older than 24 hours
+    UPDATE public.locations
+    SET 
+        latitude = NULL,
+        longitude = NULL,
+        accuracy_m = NULL,
+        is_anonymised = true,
+        anonymised_at = now()
+    WHERE (recorded_at < now() - INTERVAL '24 hours' OR created_at < now() - INTERVAL '24 hours')
+      AND (is_anonymised = false OR latitude IS NOT NULL);
+    GET DIAGNOSTICS v_locations_count = ROW_COUNT;
+
+    -- 3. Anonymise realtime_gps_logs older than 24 hours
+    UPDATE public.realtime_gps_logs
+    SET 
+        latitude = NULL,
+        longitude = NULL,
+        accuracy_m = NULL,
+        is_anonymised = true
+    WHERE recorded_at < now() - INTERVAL '24 hours' 
+      AND (is_anonymised = false OR latitude IS NOT NULL);
+    GET DIAGNOSTICS v_gps_count = ROW_COUNT;
+
+    -- 4. Anonymise users table last known locations older than 24 hours
+    UPDATE public.users
+    SET 
+        last_latitude = NULL,
+        last_longitude = NULL,
+        is_location_anonymised = true,
+        anonymised_at = now()
+    WHERE (
+        (last_location_updated_at IS NOT NULL AND last_location_updated_at < now() - INTERVAL '24 hours')
+        OR (last_location_updated_at IS NULL AND updated_at < now() - INTERVAL '24 hours')
+    )
+    AND (last_latitude IS NOT NULL OR last_longitude IS NOT NULL);
+    GET DIAGNOSTICS v_users_count = ROW_COUNT;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'anonymised_at', now(),
+        'panic_events_anonymised', v_panic_count,
+        'locations_anonymised', v_locations_count,
+        'realtime_gps_logs_anonymised', v_gps_count,
+        'users_anonymised', v_users_count
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Backward compatibility alias
 CREATE OR REPLACE FUNCTION public.anonymise_old_panic_locations()
 RETURNS void AS $$
 BEGIN
-    UPDATE public.panic_events
-    SET 
-        latitude = ROUND(latitude::numeric, 2),
-        longitude = ROUND(longitude::numeric, 2),
-        is_location_anonymised = true,
-        anonymised_at = now()
-    WHERE triggered_at < now() - INTERVAL '24 hours' 
-      AND is_location_anonymised = false
-      AND latitude IS NOT NULL
-      AND longitude IS NOT NULL;
-      
-    UPDATE public.realtime_gps_logs
-    SET 
-        latitude = ROUND(latitude::numeric, 2),
-        longitude = ROUND(longitude::numeric, 2),
-        is_anonymised = true
-    WHERE recorded_at < now() - INTERVAL '24 hours' 
-      AND is_anonymised = false;
+    PERFORM public.anonymise_24h_location_data();
 END;
 $$ LANGUAGE plpgsql;
 
--- Schedule cron job for anonymisation if pg_cron is active
+-- Schedule cron job for periodic hourly anonymisation if pg_cron is active
+DO $$
+BEGIN
+    PERFORM cron.unschedule('anonymise_old_panic_locations_cron');
+EXCEPTION WHEN OTHERS THEN NULL;
+END $$;
+
 DO $$
 BEGIN
     PERFORM cron.schedule(
-        'anonymise_old_panic_locations_cron',
-        '0 23 * * *',
-        'SELECT public.anonymise_old_panic_locations()'
+        'anonymise_24h_location_data_cron',
+        '0 * * * *',
+        'SELECT public.anonymise_24h_location_data()'
     );
 EXCEPTION WHEN OTHERS THEN
-    RAISE NOTICE 'pg_cron not available or schedule failed; function can still be run via webhook or scheduled edge function.';
+    RAISE NOTICE 'pg_cron not available; function can be triggered via backend scheduler or API endpoint.';
 END $$;
 
 -- ROW LEVEL SECURITY (RLS)
@@ -271,8 +358,13 @@ ALTER TABLE public.panic_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.responder_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.realtime_gps_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.location_sharing_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sharing_session_contacts ENABLE ROW LEVEL SECURITY;
+
+-- Locations policy
+DROP POLICY IF EXISTS locations_all ON public.locations;
+CREATE POLICY locations_all ON public.locations FOR ALL USING (true) WITH CHECK (true);
 
 -- Users policies
 DROP POLICY IF EXISTS users_self_policy ON public.users;

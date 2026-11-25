@@ -388,7 +388,7 @@ class _WearableScreenState extends State<WearableScreen> {
                         ),
                       ],
                     ),
-                    if (!controller.isBleConnected) ...[
+                    if (!controller.isHardwareGattLinked) ...[
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
@@ -397,9 +397,9 @@ class _WearableScreenState extends State<WearableScreen> {
                           icon: const Icon(Icons.bluetooth_searching_rounded, size: 16),
                           label: Text(
                             controller.isScanning
-                                ? 'Scanning for SafeGuard Pendant...'
-                                : 'Scan & Reconnect Bluetooth',
-                            style: const TextStyle(fontSize: 12.5),
+                                ? 'Scanning for SafeGuard ESP32...'
+                                : 'Scan & Link Live ESP32 Hardware (BLE)',
+                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                           ),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.primary,
@@ -410,7 +410,7 @@ class _WearableScreenState extends State<WearableScreen> {
                         ),
                       ),
                     ],
-                    if (controller.discoveredDevices.isNotEmpty && !controller.isBleConnected) ...[
+                    if (controller.discoveredDevices.isNotEmpty && !controller.isHardwareGattLinked) ...[
                       const SizedBox(height: 6),
                       ...controller.discoveredDevices.map(
                         (d) => ListTile(
@@ -445,84 +445,7 @@ class _WearableScreenState extends State<WearableScreen> {
 
               const SizedBox(height: 12),
 
-              // 3. BATTERY INDICATOR CARD
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: context.cardBg,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.cardBorder),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: AppColors.success, width: 2),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Icon(
-                        Icons.bolt_rounded,
-                        color: AppColors.success,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      '${controller.batteryPercent}%',
-                      style: TextStyle(
-                        color: context.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'About ${controller.estimatedHoursRemaining} hours remaining',
-                            style: TextStyle(
-                              color: context.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.battery_charging_full_rounded,
-                                color: context.textSecondary,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Flexible(
-                                child: Text(
-                                  'Charge via USB-C',
-                                  style: TextStyle(
-                                    color: context.textSecondary,
-                                    fontSize: 12,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 4. TOUCH SENSITIVITY & CANCELLATION WINDOW SLIDERS
+              // 3. TOUCH SENSITIVITY & CANCELLATION WINDOW SLIDERS
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -942,10 +865,29 @@ class _WearableScreenState extends State<WearableScreen> {
                           child: _buildControlActionButton(
                             context: context,
                             icon: Icons.light_mode_rounded,
-                            label: 'Find Pendant',
-                            subtitle: 'Strobe LED 10s',
+                            label: 'Blink ESP32 LED',
+                            subtitle: 'Blinks GPIO8 + Serial',
                             color: AppColors.warning,
-                            onTap: () => controller.findPendantLedStrobe(),
+                            onTap: () async {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('💡 Sending Blink command to ESP32 LED (GPIO8)...'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                              final sent = await controller.findPendantLedStrobe();
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(sent
+                                        ? '✅ ESP32 LED (GPIO8) is blinking!'
+                                        : '⚠️ Pendant not connected over BLE. Turn on Bluetooth & bring pendant close.'),
+                                    backgroundColor: sent ? AppColors.success : AppColors.warning,
+                                    duration: const Duration(seconds: 3),
+                                  ),
+                                );
+                              }
+                            },
                           ),
                         ),
                       ],
@@ -954,15 +896,24 @@ class _WearableScreenState extends State<WearableScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: () {
-                          context.read<EmergencyController>().trigger(TriggerMethod.pendantTouch);
-                          Navigator.pushNamed(context, '/emergency');
+                        onPressed: () async {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('🚨 Triggering ESP32 Pendant SOS over BLE...'),
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                          await controller.triggerRemotePendantSos();
+                          if (context.mounted) {
+                            context.read<EmergencyController>().trigger(TriggerMethod.pendantTouch);
+                            Navigator.pushNamed(context, '/emergency');
+                          }
                         },
                         icon: const Icon(Icons.sos_rounded, color: AppColors.sosRed, size: 18),
                         label: Text(
                           isChildMode
-                              ? 'Trigger Emergency SOS for Child'
-                              : 'Trigger Remote SOS Now',
+                              ? 'Trigger ESP32 & App SOS for Child'
+                              : 'Trigger ESP32 Pendant & App SOS Now',
                           style: const TextStyle(
                             color: AppColors.sosRed,
                             fontWeight: FontWeight.bold,

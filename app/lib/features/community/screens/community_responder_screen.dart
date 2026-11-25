@@ -25,6 +25,7 @@ class DistressUserEntry {
   final String sourceChannel; // 'BLE Bluetooth' or 'Cloud + GPS'
   final int? rssi;
   final DateTime detectedAt;
+  final DateTime firstDetectedAt;
   String status; // 'active', 'accepted'
 
   DistressUserEntry({
@@ -37,8 +38,24 @@ class DistressUserEntry {
     required this.sourceChannel,
     this.rssi,
     required this.detectedAt,
+    DateTime? firstDetectedAt,
     this.status = 'active',
-  });
+  }) : firstDetectedAt = firstDetectedAt ?? detectedAt;
+
+  Duration get broadcastDuration => DateTime.now().difference(firstDetectedAt);
+
+  String get broadcastDurationFormatted {
+    final d = broadcastDuration;
+    if (d.inSeconds < 60) {
+      return '${d.inSeconds}s';
+    } else if (d.inMinutes < 60) {
+      final secs = d.inSeconds % 60;
+      return '${d.inMinutes}m ${secs}s';
+    } else {
+      final mins = d.inMinutes % 60;
+      return '${d.inHours}h ${mins}m';
+    }
+  }
 }
 
 class CommunityResponderScreen extends StatefulWidget {
@@ -66,6 +83,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
   StreamSubscription<List<BleDistressBeacon>>? _bleDistressSub;
   StreamSubscription<Position>? _positionSub;
   Timer? _refreshTimer;
+  Timer? _tickerTimer;
 
   @override
   void initState() {
@@ -78,17 +96,42 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
     final user = auth.currentUser;
     if (user != null) {
       _responderStatus = user.isCommunityResponder ? (user.responderStatus ?? 'available') : 'offline';
+      if (user.isCommunityResponder) {
+        _communityResponders = [
+          {
+            'id': user.id,
+            'full_name': user.fullName.isNotEmpty ? user.fullName : 'You',
+            'responder_status': _responderStatus,
+            'is_community_responder': true,
+          }
+        ];
+      }
     }
 
-    // Seed any already-detected BLE beacons immediately on screen open
-    if (_bleService.activeBeacons.isNotEmpty) {
-      _ingestBleBeacons(_bleService.activeBeacons, silent: true);
+    final lastPos = await _locationService.getLastKnownPosition();
+    if (lastPos != null) {
+      _myLocation = LatLng(lastPos.latitude, lastPos.longitude);
+      _hasLocationFix = true;
     }
 
     await _refreshMyLocation();
     _startLiveLocationStream();
+
+    // Ingest any active BLE beacons with true GPS fix
+    if (_bleService.activeBeacons.isNotEmpty) {
+      _ingestBleBeacons(_bleService.activeBeacons, silent: true);
+    }
+
     await _startBleDistressRadar();
     await _fetchCloudDistressAndResponders();
+
+    // 1-second ticker to update live broadcast duration in real-time
+    _tickerTimer?.cancel();
+    _tickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _distressUsers.isNotEmpty) {
+        setState(() {});
+      }
+    });
 
     _refreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (mounted) {
@@ -103,6 +146,35 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
     });
   }
 
+  void _recalculateDistressDistances() {
+    for (final key in _distressUsers.keys.toList()) {
+      final d = _distressUsers[key]!;
+      final hasCoords = d.latitude.abs() > 0.0001 || d.longitude.abs() > 0.0001;
+      final newDist = (_hasLocationFix && hasCoords)
+          ? Geolocator.distanceBetween(
+              _myLocation.latitude,
+              _myLocation.longitude,
+              d.latitude,
+              d.longitude,
+            )
+          : d.distanceMeters;
+
+      _distressUsers[key] = DistressUserEntry(
+        id: d.id,
+        victimName: d.victimName,
+        latitude: d.latitude,
+        longitude: d.longitude,
+        distanceMeters: newDist,
+        triggerType: d.triggerType,
+        sourceChannel: d.sourceChannel,
+        rssi: d.rssi,
+        detectedAt: d.detectedAt,
+        firstDetectedAt: d.firstDetectedAt,
+        status: d.status,
+      );
+    }
+  }
+
   void _startLiveLocationStream() {
     _positionSub?.cancel();
     try {
@@ -111,28 +183,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
         setState(() {
           _myLocation = LatLng(pos.latitude, pos.longitude);
           _hasLocationFix = true;
-          // Recalculate live distances to all active distress users
-          for (final key in _distressUsers.keys.toList()) {
-            final d = _distressUsers[key]!;
-            final newDist = Geolocator.distanceBetween(
-              _myLocation.latitude,
-              _myLocation.longitude,
-              d.latitude,
-              d.longitude,
-            );
-            _distressUsers[key] = DistressUserEntry(
-              id: d.id,
-              victimName: d.victimName,
-              latitude: d.latitude,
-              longitude: d.longitude,
-              distanceMeters: newDist,
-              triggerType: d.triggerType,
-              sourceChannel: d.sourceChannel,
-              rssi: d.rssi,
-              detectedAt: d.detectedAt,
-              status: d.status,
-            );
-          }
+          _recalculateDistressDistances();
         });
       });
     } catch (_) {}
@@ -148,19 +199,11 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
         setState(() {
           _myLocation = LatLng(pos.latitude, pos.longitude);
           _hasLocationFix = true;
+          _recalculateDistressDistances();
         });
         try {
           _mapController.move(_myLocation, 15.5);
         } catch (_) {}
-
-        final user = context.read<AuthController>().currentUser;
-        if (user != null) {
-          await _supabaseService.updateUserProfile(
-            userId: user.id,
-            lastLat: pos.latitude,
-            lastLng: pos.longitude,
-          );
-        }
       }
     } catch (_) {}
   }
@@ -172,7 +215,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
       final hasValidCoords = b.latitude.abs() > 0.0001 || b.longitude.abs() > 0.0001;
       final lat = hasValidCoords ? b.latitude : _myLocation.latitude;
       final lng = hasValidCoords ? b.longitude : _myLocation.longitude;
-      final dist = hasValidCoords
+      final dist = (_hasLocationFix && hasValidCoords)
           ? Geolocator.distanceBetween(
               _myLocation.latitude,
               _myLocation.longitude,
@@ -181,14 +224,21 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
             )
           : b.estimatedDistanceMeters;
 
-      final key = 'BLE-${b.userTagHex}';
-      final existing = _distressUsers[key];
+      // Unified key so that BLE and Cloud alerts from the same user/pendant merge cleanly
+      String victimKey = 'VICTIM-${b.userTagHex}';
+      for (final existingKey in _distressUsers.keys) {
+        if (existingKey.toLowerCase().contains(b.userTagHex.toLowerCase())) {
+          victimKey = existingKey;
+          break;
+        }
+      }
+      final existing = _distressUsers[victimKey];
       if (existing == null) {
         addedNew = true;
       }
       final isPendant = b.sourceType == 'pendant_ble';
-      _distressUsers[key] = DistressUserEntry(
-        id: key,
+      _distressUsers[victimKey] = DistressUserEntry(
+        id: victimKey,
         victimName: b.resolvedUserName ??
             existing?.victimName ??
             (isPendant
@@ -201,6 +251,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
         sourceChannel: 'BLE Bluetooth (${b.rssi} dBm)',
         rssi: b.rssi,
         detectedAt: b.detectedAt,
+        firstDetectedAt: existing?.firstDetectedAt ?? b.firstDetectedAt,
         status: existing?.status ?? 'active',
       );
     }
@@ -238,70 +289,130 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
     try {
       final myUserId = context.read<AuthController>().currentUser?.id;
 
-      // 1. Fetch active panic events from Supabase (both phone & pendant panic events)
-      final activeEvents = await _supabaseService.client
-          .from('panic_events')
-          .select('id, user_id, latitude, longitude, trigger_type, status, timestamp')
-          .eq('status', 'active')
-          .order('timestamp', ascending: false)
-          .limit(15);
+      // 1. Fetch active panic events from Supabase (using schema-accurate columns)
+      try {
+        final activeEvents = await _supabaseService.client
+            .from('panic_events')
+            .select('id, user_id, latitude, longitude, trigger_method, status, triggered_at')
+            .eq('status', 'active')
+            .order('triggered_at', ascending: false)
+            .limit(15);
 
-      for (final row in (activeEvents as List)) {
-        final eventId = row['id'].toString();
-        final victimId = row['user_id']?.toString() ?? '';
-        final lat = (row['latitude'] as num?)?.toDouble() ?? 0.0;
-        final lng = (row['longitude'] as num?)?.toDouble() ?? 0.0;
-        if (lat == 0.0 && lng == 0.0) continue;
+        final Set<String> activeVictimKeys = {};
+        for (final row in (activeEvents as List)) {
+          final eventId = row['id'].toString();
+          final victimId = row['user_id']?.toString() ?? '';
+          final lat = (row['latitude'] as num?)?.toDouble() ?? 0.0;
+          final lng = (row['longitude'] as num?)?.toDouble() ?? 0.0;
+          if (lat == 0.0 && lng == 0.0) continue;
 
-        final dist = Geolocator.distanceBetween(
-          _myLocation.latitude,
-          _myLocation.longitude,
-          lat,
-          lng,
-        );
-        // Include distress events within 5 km
-        if (dist <= 5000) {
-          String victimLabel = victimId == myUserId
-              ? 'You (Active SOS Broadcast)'
-              : 'SafeLink User #${victimId.length >= 6 ? victimId.substring(0, 6).toUpperCase() : victimId}';
-          try {
-            final uRow = await _supabaseService.client
-                .from('users')
-                .select('full_name')
-                .eq('id', victimId)
-                .maybeSingle();
-            if (uRow != null && uRow['full_name'] != null && uRow['full_name'].toString().isNotEmpty) {
-              victimLabel = uRow['full_name'].toString();
-            }
-          } catch (_) {}
+          final dist = _hasLocationFix
+              ? Geolocator.distanceBetween(
+                  _myLocation.latitude,
+                  _myLocation.longitude,
+                  lat,
+                  lng,
+                )
+              : 0.0;
 
-          _distressUsers['CLOUD-$eventId'] = DistressUserEntry(
-            id: eventId,
-            victimName: victimLabel,
-            latitude: lat,
-            longitude: lng,
-            distanceMeters: dist,
-            triggerType: row['trigger_type']?.toString() ?? 'phone_button',
-            sourceChannel: 'Cloud + BLE Mesh',
-            detectedAt: DateTime.tryParse(row['timestamp']?.toString() ?? '') ?? DateTime.now(),
-          );
+          // Include distress events within 5 km
+          if (dist <= 5000) {
+            String victimLabel = victimId == myUserId
+                ? 'You (Active SOS Broadcast)'
+                : 'SafeLink User #${victimId.length >= 6 ? victimId.substring(0, 6).toUpperCase() : victimId}';
+            try {
+              final uRow = await _supabaseService.client
+                  .from('users')
+                  .select('full_name')
+                  .eq('id', victimId)
+                  .maybeSingle();
+              if (uRow != null && uRow['full_name'] != null && uRow['full_name'].toString().isNotEmpty) {
+                victimLabel = uRow['full_name'].toString();
+              }
+            } catch (_) {}
+
+            // Group multiple alerts from the same victim under a single entry
+            final victimKey = 'VICTIM-${victimId.isNotEmpty ? (victimId.length >= 8 ? victimId.substring(0, 8).toLowerCase() : victimId) : eventId}';
+            activeVictimKeys.add(victimKey);
+            final existing = _distressUsers[victimKey];
+            final eventTime = DateTime.tryParse(row['triggered_at']?.toString() ?? '') ?? DateTime.now();
+            final earliestDetectedAt = existing != null && existing.firstDetectedAt.isBefore(eventTime)
+                ? existing.firstDetectedAt
+                : eventTime;
+
+            _distressUsers[victimKey] = DistressUserEntry(
+              id: eventId,
+              victimName: victimLabel,
+              latitude: lat,
+              longitude: lng,
+              distanceMeters: dist,
+              triggerType: row['trigger_method']?.toString() ?? 'phone_button',
+              sourceChannel: existing != null && existing.sourceChannel.contains('BLE')
+                  ? existing.sourceChannel
+                  : 'Cloud + BLE Mesh',
+              rssi: existing?.rssi,
+              detectedAt: eventTime,
+              firstDetectedAt: earliestDetectedAt,
+              status: existing?.status ?? 'active',
+            );
+          }
+        }
+        // Remove cloud-only entries that are no longer active in Supabase
+        _distressUsers.removeWhere((key, entry) =>
+            key.startsWith('VICTIM-') &&
+            !entry.sourceChannel.contains('BLE Bluetooth') &&
+            !activeVictimKeys.contains(key));
+      } catch (e) {
+        debugPrint('[COMMUNITY] Error fetching active panic events: $e');
+      }
+
+      // 2. Fetch registered Community Responders (using schema-accurate columns)
+      try {
+        final respondersData = await _supabaseService.client
+            .from('users')
+            .select('id, full_name, responder_status, is_community_responder')
+            .eq('is_community_responder', true)
+            .limit(25);
+
+        final responders = List<Map<String, dynamic>>.from(respondersData as List);
+
+        // Ensure logged-in user is always present if opted-in as responder
+        final currentUser = context.read<AuthController>().currentUser;
+        if (currentUser != null && (currentUser.isCommunityResponder || _responderStatus != 'offline')) {
+          final alreadyPresent = responders.any((r) => r['id'] == currentUser.id);
+          if (!alreadyPresent) {
+            responders.insert(0, {
+              'id': currentUser.id,
+              'full_name': currentUser.fullName.isNotEmpty ? currentUser.fullName : 'You',
+              'responder_status': _responderStatus,
+              'is_community_responder': true,
+            });
+          }
+        }
+
+        if (mounted) {
+          setState(() {
+            _communityResponders = responders;
+          });
+        }
+      } catch (e) {
+        debugPrint('[COMMUNITY] Error fetching responders: $e');
+        final currentUser = context.read<AuthController>().currentUser;
+        if (currentUser != null && (currentUser.isCommunityResponder || _responderStatus != 'offline')) {
+          if (mounted) {
+            setState(() {
+              _communityResponders = [
+                {
+                  'id': currentUser.id,
+                  'full_name': currentUser.fullName.isNotEmpty ? currentUser.fullName : 'You',
+                  'responder_status': _responderStatus,
+                  'is_community_responder': true,
+                }
+              ];
+            });
+          }
         }
       }
-
-      // 2. Fetch registered Community Responders
-      final respondersData = await _supabaseService.client
-          .from('users')
-          .select('id, full_name, responder_status, is_community_responder, last_lat, last_lng')
-          .eq('is_community_responder', true)
-          .limit(25);
-
-      if (mounted) {
-        setState(() {
-          _communityResponders = List<Map<String, dynamic>>.from(respondersData as List);
-        });
-      }
-    } catch (_) {
-      // Ignore network/table errors gracefully
     } finally {
       if (mounted) {
         setState(() => _isLoadingCloud = false);
@@ -313,7 +424,22 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
     final auth = context.read<AuthController>();
     final user = auth.currentUser;
     final newStatus = enabled ? 'available' : 'offline';
-    setState(() => _responderStatus = newStatus);
+    setState(() {
+      _responderStatus = newStatus;
+      if (enabled && user != null) {
+        if (!_communityResponders.any((r) => r['id'] == user.id)) {
+          _communityResponders.insert(0, {
+            'id': user.id,
+            'full_name': user.fullName.isNotEmpty ? user.fullName : 'You',
+            'responder_status': 'available',
+            'is_community_responder': true,
+          });
+        }
+      } else if (!enabled && user != null) {
+        _communityResponders.removeWhere((r) => r['id'] == user.id);
+      }
+    });
+
     if (user != null) {
       await auth.updateProfile(
         fullName: user.fullName,
@@ -344,7 +470,15 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
   Future<void> _setResponderAvailability(String status) async {
     final auth = context.read<AuthController>();
     final user = auth.currentUser;
-    setState(() => _responderStatus = status);
+    setState(() {
+      _responderStatus = status;
+      for (final r in _communityResponders) {
+        if (r['id'] == user?.id) {
+          r['responder_status'] = status;
+        }
+      }
+    });
+
     if (user != null) {
       await auth.updateProfile(
         fullName: user.fullName,
@@ -370,6 +504,8 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
       simLng,
     );
     final key = fromPendant ? 'SIM-BLE-PENDANT' : 'SIM-BLE-PHONE';
+    final existing = _distressUsers[key];
+    final now = DateTime.now();
     final entry = DistressUserEntry(
       id: key,
       victimName: fromPendant ? 'SafeLink Pendant #JK001 (BLE SOS)' : 'Nearby App User (Phone SOS)',
@@ -379,7 +515,8 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
       triggerType: fromPendant ? 'pendant_touch' : 'phone_button',
       sourceChannel: 'BLE Bluetooth (-58 dBm)',
       rssi: -58,
-      detectedAt: DateTime.now(),
+      detectedAt: now,
+      firstDetectedAt: existing?.firstDetectedAt ?? now.subtract(const Duration(minutes: 2, seconds: 15)),
     );
 
     setState(() {
@@ -460,6 +597,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
 
   @override
   void dispose() {
+    _tickerTimer?.cancel();
     _bleDistressSub?.cancel();
     _positionSub?.cancel();
     _refreshTimer?.cancel();
@@ -761,10 +899,12 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(
-                                            'SOS • ${d.distanceMeters.round()}m',
+                                            d.distanceMeters < 5
+                                                ? 'SOS • Nearby • ${d.broadcastDurationFormatted}'
+                                                : 'SOS • ${d.distanceMeters.round()}m • ${d.broadcastDurationFormatted}',
                                             style: const TextStyle(
                                               color: Colors.white,
-                                              fontSize: 10,
+                                              fontSize: 9.5,
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
@@ -1191,9 +1331,11 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  entry.distanceMeters < 1000
-                      ? '${entry.distanceMeters.round()} m'
-                      : '${(entry.distanceMeters / 1000).toStringAsFixed(1)} km',
+                  entry.distanceMeters < 5
+                      ? 'Nearby (< 5m)'
+                      : (entry.distanceMeters < 1000
+                          ? '${entry.distanceMeters.round()} m'
+                          : '${(entry.distanceMeters / 1000).toStringAsFixed(1)} km'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
@@ -1204,9 +1346,38 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'GPS Location: ${entry.latitude.toStringAsFixed(5)}, ${entry.longitude.toStringAsFixed(5)}',
-            style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'GPS: ${entry.latitude.toStringAsFixed(5)}, ${entry.longitude.toStringAsFixed(5)}',
+                  style: TextStyle(color: context.textSecondary, fontSize: 11.5),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.timer_outlined, size: 12.5, color: Colors.amber),
+                    const SizedBox(width: 4.5),
+                    Text(
+                      'Broadcast: ${entry.broadcastDurationFormatted}',
+                      style: const TextStyle(
+                        color: Colors.amber,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 10),
           Row(

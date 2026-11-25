@@ -1,6 +1,8 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/avatar_presets.dart';
 import '../../../core/theme/theme_controller.dart';
@@ -8,6 +10,7 @@ import '../controllers/home_controller.dart';
 import '../../auth/controllers/auth_controller.dart';
 import '../../emergency/controllers/emergency_controller.dart';
 import '../../emergency/services/voice_activation_service.dart';
+import '../../wearable/controllers/wearable_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,7 +45,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _getDisplayName(dynamic user) {
     if (user != null) {
       final fullName = user.fullName as String?;
-      if (fullName != null && fullName.trim().isNotEmpty && fullName.trim() != 'SafeLink User') {
+      if (fullName != null &&
+          fullName.trim().isNotEmpty &&
+          fullName.trim() != 'SafeLink User') {
         return fullName.trim();
       }
       final email = user.email as String?;
@@ -56,7 +61,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return 'Guardian';
   }
 
-  void _showShakeSettingsModal(BuildContext context, EmergencyController emergencyController) {
+  void _showShakeSettingsModal(
+    BuildContext context,
+    EmergencyController emergencyController,
+  ) {
     showModalBottomSheet(
       context: context,
       backgroundColor: context.cardBg,
@@ -91,12 +99,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: (isArmed ? AppColors.success : AppColors.error).withValues(alpha: 0.15),
+                            color:
+                                (isArmed ? AppColors.success : AppColors.error)
+                                    .withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
                             Icons.vibration_rounded,
-                            color: isArmed ? AppColors.success : AppColors.error,
+                            color: isArmed
+                                ? AppColors.success
+                                : AppColors.error,
                             size: 24,
                           ),
                         ),
@@ -115,9 +127,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                isArmed ? 'ARMED & ACTIVE IN BACKGROUND' : 'DISABLED',
+                                isArmed
+                                    ? 'ARMED & ACTIVE IN BACKGROUND'
+                                    : 'DISABLED',
                                 style: TextStyle(
-                                  color: isArmed ? AppColors.success : AppColors.error,
+                                  color: isArmed
+                                      ? AppColors.success
+                                      : AppColors.error,
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0.6,
@@ -175,15 +191,24 @@ class _HomeScreenState extends State<HomeScreen> {
                         Navigator.pushNamed(context, '/emergency');
                         emergencyController.trigger(TriggerMethod.appShake);
                       },
-                      icon: const Icon(Icons.flash_on_rounded, color: Colors.white, size: 18),
+                      icon: const Icon(
+                        Icons.flash_on_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                       label: const Text(
                         'Test Shake SOS Now',
-                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.sosRed,
                         padding: const EdgeInsets.symmetric(vertical: 13),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         elevation: 0,
                       ),
                     ),
@@ -197,7 +222,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showVoiceSettingsModal(BuildContext context, EmergencyController emergencyController) {
+  void _showVoiceSettingsModal(
+    BuildContext context,
+    EmergencyController emergencyController,
+  ) {
     showModalBottomSheet(
       context: context,
       backgroundColor: context.cardBg,
@@ -233,12 +261,22 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: (isEnabled ? AppColors.success : AppColors.error).withValues(alpha: 0.15),
+                            color:
+                                (isEnabled
+                                        ? AppColors.success
+                                        : AppColors.error)
+                                    .withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            isListening ? Icons.mic_rounded : (isEnabled ? Icons.mic_rounded : Icons.mic_off_rounded),
-                            color: isEnabled ? AppColors.success : AppColors.error,
+                            isListening
+                                ? Icons.mic_rounded
+                                : (isEnabled
+                                      ? Icons.mic_rounded
+                                      : Icons.mic_off_rounded),
+                            color: isEnabled
+                                ? AppColors.success
+                                : AppColors.error,
                             size: 24,
                           ),
                         ),
@@ -259,9 +297,13 @@ class _HomeScreenState extends State<HomeScreen> {
                               Text(
                                 isListening
                                     ? 'ACTIVE LISTENING FOR HELP PHRASE'
-                                    : (isEnabled ? 'ENABLED (STANDBY)' : 'DISABLED'),
+                                    : (isEnabled
+                                          ? 'ENABLED (STANDBY)'
+                                          : 'DISABLED'),
                                 style: TextStyle(
-                                  color: isEnabled ? AppColors.success : AppColors.error,
+                                  color: isEnabled
+                                      ? AppColors.success
+                                      : AppColors.error,
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0.6,
@@ -331,7 +373,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               foregroundColor: AppColors.primary,
                               side: const BorderSide(color: AppColors.primary),
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                             ),
                           ),
                         ),
@@ -341,17 +385,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             onPressed: () {
                               Navigator.pop(ctx);
                               Navigator.pushNamed(context, '/emergency');
-                              emergencyController.trigger(TriggerMethod.voiceKeyword);
+                              emergencyController.trigger(
+                                TriggerMethod.voiceKeyword,
+                              );
                             },
-                            icon: const Icon(Icons.record_voice_over_rounded, color: Colors.white, size: 18),
+                            icon: const Icon(
+                              Icons.record_voice_over_rounded,
+                              color: Colors.white,
+                              size: 18,
+                            ),
                             label: const Text(
                               'Test Voice SOS',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.sosRed,
                               padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
                               elevation: 0,
                             ),
                           ),
@@ -424,9 +479,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       // Light / Dark Mode Quick Toggle
                       IconButton(
-                        tooltip: context.isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+                        tooltip: context.isDarkMode
+                            ? 'Switch to Light Mode'
+                            : 'Switch to Dark Mode',
                         icon: Icon(
-                          context.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                          context.isDarkMode
+                              ? Icons.light_mode_outlined
+                              : Icons.dark_mode_outlined,
                           size: 22,
                           color: context.textPrimary,
                         ),
@@ -436,8 +495,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       Stack(
                         children: [
                           IconButton(
-                            icon: Icon(Icons.notifications_none_rounded, size: 25, color: context.textPrimary),
-                            onPressed: () => Navigator.pushNamed(context, '/alerts'),
+                            icon: Icon(
+                              Icons.notifications_none_rounded,
+                              size: 25,
+                              color: context.textPrimary,
+                            ),
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/alerts'),
                           ),
                           Positioned(
                             right: 11,
@@ -476,16 +540,20 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Live Voice Keyword Detection Banner (shows when a wake word is detected)
+              // Live Voice Keyword Detection Banner (shows only when a wake word is detected)
               ValueListenableBuilder<String?>(
-                valueListenable: VoiceActivationService.instance.lastDetectedKeyword,
+                valueListenable:
+                    VoiceActivationService.instance.lastDetectedKeyword,
                 builder: (context, detectedKeyword, _) {
                   if (detectedKeyword == null || detectedKeyword.isEmpty) {
                     return const SizedBox.shrink();
                   }
                   return Container(
                     margin: const EdgeInsets.only(bottom: 12),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.sosRed.withValues(alpha: 0.14),
                       borderRadius: BorderRadius.circular(14),
@@ -493,7 +561,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.record_voice_over_rounded, color: AppColors.sosRed, size: 20),
+                        const Icon(
+                          Icons.record_voice_over_rounded,
+                          color: AppColors.sosRed,
+                          size: 20,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -524,9 +596,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         IconButton(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          icon: Icon(Icons.close, size: 18, color: context.textSecondary),
+                          icon: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: context.textSecondary,
+                          ),
                           onPressed: () {
-                            VoiceActivationService.instance.lastDetectedKeyword.value = null;
+                            VoiceActivationService
+                                    .instance
+                                    .lastDetectedKeyword
+                                    .value =
+                                null;
                           },
                         ),
                       ],
@@ -567,9 +647,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Image.asset(
                             'assets/images/pendant_device.jpg',
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => const Center(
-                              child: Icon(Icons.watch, color: Colors.white, size: 32),
-                            ),
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Center(
+                                  child: Icon(
+                                    Icons.watch,
+                                    color: Colors.white,
+                                    size: 32,
+                                  ),
+                                ),
                           ),
                         ),
                       ),
@@ -581,7 +666,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.circle, color: AppColors.success, size: 8),
+                                const Icon(
+                                  Icons.circle,
+                                  color: AppColors.success,
+                                  size: 8,
+                                ),
                                 const SizedBox(width: 5),
                                 const Text(
                                   'Connected',
@@ -619,22 +708,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(Icons.battery_5_bar_rounded, color: AppColors.primary, size: 15),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      '78%',
-                                      style: TextStyle(
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 11.5,
-                                      ),
+                                    Icon(
+                                      Icons.signal_cellular_alt_rounded,
+                                      color: AppColors.primary,
+                                      size: 15,
                                     ),
-                                  ],
-                                ),
-                                const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.signal_cellular_alt_rounded, color: AppColors.primary, size: 15),
                                     SizedBox(width: 3),
                                     Text(
                                       'Strong',
@@ -663,17 +741,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: WrapCrossAlignment.center,
                               children: [
                                 GestureDetector(
-                                  onTap: () => Navigator.pushNamed(context, '/wearable'),
+                                  onTap: () =>
+                                      Navigator.pushNamed(context, '/wearable'),
                                   child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3.5,
+                                    ),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary.withValues(alpha: 0.12),
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.12,
+                                      ),
                                       borderRadius: BorderRadius.circular(7),
                                     ),
                                     child: const Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Icon(Icons.tune_rounded, size: 11, color: AppColors.primary),
+                                        Icon(
+                                          Icons.tune_rounded,
+                                          size: 11,
+                                          color: AppColors.primary,
+                                        ),
                                         SizedBox(width: 4),
                                         Text(
                                           'Pendant Controls',
@@ -688,7 +776,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                                 GestureDetector(
-                                  onTap: () => Navigator.pushNamed(context, '/shop'),
+                                  onTap: () =>
+                                      Navigator.pushNamed(context, '/shop'),
                                   child: Text(
                                     'Order Pendant',
                                     style: TextStyle(
@@ -696,6 +785,155 @@ class _HomeScreenState extends State<HomeScreen> {
                                       fontSize: 10.5,
                                       fontWeight: FontWeight.w600,
                                       decoration: TextDecoration.underline,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            const Divider(height: 1),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () async {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                '💡 Sending Blink command to ESP32 LED (GPIO8)...',
+                                              ),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                      final sent = await context
+                                          .read<WearableController>()
+                                          .findPendantLedStrobe();
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  sent
+                                                      ? '✅ ESP32 LED (GPIO8) is blinking!'
+                                                      : '⚠️ Pendant not connected over BLE. Turn on Bluetooth & bring pendant close.',
+                                                ),
+                                                backgroundColor: sent
+                                                    ? AppColors.success
+                                                    : AppColors.warning,
+                                                duration: const Duration(
+                                                  seconds: 3,
+                                                ),
+                                              ),
+                                            );
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 7,
+                                        horizontal: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.amber.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Colors.amber.withValues(
+                                            alpha: 0.4,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.lightbulb_rounded,
+                                            size: 14,
+                                            color: Colors.amber,
+                                          ),
+                                          SizedBox(width: 5),
+                                          Text(
+                                            'Blink LED',
+                                            style: TextStyle(
+                                              color: Colors.amber,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: InkWell(
+                                    onTap: () async {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                            const SnackBar(
+                                              content: Text(
+                                                '🚨 Triggering ESP32 Pendant SOS...',
+                                              ),
+                                              duration: Duration(seconds: 2),
+                                            ),
+                                          );
+                                      await context
+                                          .read<WearableController>()
+                                          .triggerRemotePendantSos();
+                                      if (context.mounted) {
+                                        context
+                                            .read<EmergencyController>()
+                                            .trigger(
+                                              TriggerMethod.pendantTouch,
+                                            );
+                                        Navigator.pushNamed(
+                                          context,
+                                          '/emergency',
+                                        );
+                                      }
+                                    },
+                                    borderRadius: BorderRadius.circular(8),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 7,
+                                        horizontal: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.sosRed.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: AppColors.sosRed.withValues(
+                                            alpha: 0.4,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.sos_rounded,
+                                            size: 15,
+                                            color: AppColors.sosRed,
+                                          ),
+                                          SizedBox(width: 5),
+                                          Text(
+                                            'Trigger Pendant',
+                                            style: TextStyle(
+                                              color: AppColors.sosRed,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 11.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -720,10 +958,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: const RadialGradient(
-                        colors: [
-                          AppColors.sosRed,
-                          Color(0xFFE11D48),
-                        ],
+                        colors: [AppColors.sosRed, Color(0xFFE11D48)],
                       ),
                       boxShadow: [
                         BoxShadow(
@@ -742,7 +977,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.fingerprint, color: Colors.white, size: 32),
+                          Icon(
+                            Icons.fingerprint,
+                            color: Colors.white,
+                            size: 32,
+                          ),
                           SizedBox(height: 2),
                           Text(
                             'HOLD FOR',
@@ -798,9 +1037,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: _buildTriggerCard(
                       icon: Icons.vibration_rounded,
                       title: 'Shake Phone',
-                      subtitle: emergencyController.isShakeActive ? 'Active' : 'Disabled',
+                      subtitle: emergencyController.isShakeActive
+                          ? 'Active'
+                          : 'Disabled',
                       isHighlighted: emergencyController.isShakeActive,
-                      onTap: () => _showShakeSettingsModal(context, emergencyController),
+                      onTap: () =>
+                          _showShakeSettingsModal(context, emergencyController),
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -808,13 +1050,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: _buildTriggerCard(
                       icon: emergencyController.isVoiceActive
                           ? Icons.mic_rounded
-                          : (emergencyController.isVoiceEnabled ? Icons.mic_rounded : Icons.mic_none_rounded),
+                          : (emergencyController.isVoiceEnabled
+                                ? Icons.mic_rounded
+                                : Icons.mic_none_rounded),
                       title: 'Voice SOS',
                       subtitle: emergencyController.isVoiceActive
                           ? 'Listening'
-                          : (emergencyController.isVoiceEnabled ? 'Standby' : 'Disabled'),
-                      isHighlighted: emergencyController.isVoiceActive || emergencyController.isVoiceEnabled,
-                      onTap: () => _showVoiceSettingsModal(context, emergencyController),
+                          : (emergencyController.isVoiceEnabled
+                                ? 'Standby'
+                                : 'Disabled'),
+                      isHighlighted:
+                          emergencyController.isVoiceActive ||
+                          emergencyController.isVoiceEnabled,
+                      onTap: () =>
+                          _showVoiceSettingsModal(context, emergencyController),
                     ),
                   ),
                 ],
@@ -864,7 +1113,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: _buildQuickAction(
                       icon: Icons.mic_rounded,
                       label: 'Voice SOS',
-                      onTap: () => Navigator.pushNamed(context, '/voice-settings'),
+                      onTap: () =>
+                          Navigator.pushNamed(context, '/voice-settings'),
                     ),
                   ),
                 ],
@@ -873,14 +1123,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Community Responder & BLE Distress Radar Card
               InkWell(
-                onTap: () => Navigator.pushNamed(context, '/community-responders'),
+                onTap: () =>
+                    Navigator.pushNamed(context, '/community-responders'),
                 borderRadius: BorderRadius.circular(14),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 11,
+                  ),
                   decoration: BoxDecoration(
                     color: context.cardBg,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.success.withValues(alpha: 0.45)),
+                    border: Border.all(
+                      color: AppColors.success.withValues(alpha: 0.45),
+                    ),
                   ),
                   child: Row(
                     children: [
@@ -890,7 +1146,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: AppColors.success.withValues(alpha: 0.14),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.shield_rounded, color: AppColors.success, size: 20),
+                        child: const Icon(
+                          Icons.shield_rounded,
+                          color: AppColors.success,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -913,7 +1173,10 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 5,
+                                    vertical: 1.5,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: AppColors.success,
                                     borderRadius: BorderRadius.circular(6),
@@ -932,7 +1195,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 2),
                             Text(
                               'Live map of your location & nearby users in distress',
-                              style: TextStyle(color: context.textSecondary, fontSize: 11),
+                              style: TextStyle(
+                                color: context.textSecondary,
+                                fontSize: 11,
+                              ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -940,7 +1206,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
-                      const Icon(Icons.chevron_right_rounded, size: 18, color: AppColors.success),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 18,
+                        color: AppColors.success,
+                      ),
                     ],
                   ),
                 ),
@@ -961,15 +1231,33 @@ class _HomeScreenState extends State<HomeScreen> {
           currentIndex: 0,
           selectedItemColor: AppColors.primary,
           unselectedItemColor: context.textMuted,
-          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11),
+          selectedLabelStyle: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 11,
+          ),
           unselectedLabelStyle: const TextStyle(fontSize: 11),
           type: BottomNavigationBarType.fixed,
           items: const [
-            BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-            BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Map'),
-            BottomNavigationBarItem(icon: Icon(Icons.warning_amber_rounded), label: 'Alerts'),
-            BottomNavigationBarItem(icon: Icon(Icons.people_outline_rounded), label: 'Contacts'),
-            BottomNavigationBarItem(icon: Icon(Icons.person_outline_rounded), label: 'Profile'),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home_filled),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.map_outlined),
+              label: 'Map',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.warning_amber_rounded),
+              label: 'Alerts',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.people_outline_rounded),
+              label: 'Contacts',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              label: 'Profile',
+            ),
           ],
           onTap: (index) {
             if (index == 1) Navigator.pushNamed(context, '/map');
@@ -998,12 +1286,16 @@ class _HomeScreenState extends State<HomeScreen> {
           color: context.cardBg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isHighlighted ? AppColors.success.withValues(alpha: 0.6) : context.cardBorder,
+            color: isHighlighted
+                ? AppColors.success.withValues(alpha: 0.6)
+                : context.cardBorder,
             width: isHighlighted ? 1.5 : 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: context.isDarkMode ? Colors.black.withValues(alpha: 0.2) : AppColors.cardShadow,
+              color: context.isDarkMode
+                  ? Colors.black.withValues(alpha: 0.2)
+                  : AppColors.cardShadow,
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
@@ -1011,7 +1303,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Column(
           children: [
-            Icon(icon, color: isHighlighted ? AppColors.success : AppColors.primary, size: 22),
+            Icon(
+              icon,
+              color: isHighlighted ? AppColors.success : AppColors.primary,
+              size: 22,
+            ),
             const SizedBox(height: 5),
             Text(
               title,

@@ -26,7 +26,6 @@ class WearableController extends ChangeNotifier {
   bool touchTriggerEnabled = true;
   double touchSensitivitySeconds = 3.0; // 1s - 10s
   double cancellationWindowSeconds = 10.0; // 5s - 30s
-  int batteryPercent = 78;
   int signalBars = 4; // 1 - 4
   String firmwareVersion = '2.1.0';
   String pendantSerialLabel = 'SafeLink Pendant #JK001';
@@ -42,12 +41,12 @@ class WearableController extends ChangeNotifier {
   String? lastCommandFeedback;
 
   bool get isBleConnected => isConnected;
+  bool get isHardwareGattLinked => _bleService.isConnected;
   bool get isChildMode => ownerMode == PendantOwnerMode.child;
   String get guardianPhone => guardianPhoneNumber;
   double? get pendantLat => lastLocatedLat;
   double? get pendantLng => lastLocatedLng;
   bool get isLocatingPendant => isLocating;
-  int get estimatedHoursRemaining => (batteryPercent * 0.18).round().clamp(1, 24);
 
   final SupabaseService _supabaseService = sl<SupabaseService>();
   final BleService _bleService = sl<BleService>();
@@ -65,12 +64,18 @@ class WearableController extends ChangeNotifier {
     await _loadSavedSettings();
     await loadPairedDevice();
 
+    // Auto-scan & pair over BLE GATT as soon as the app starts so ESP32 <-> App link is live
+    unawaited(_bleService.autoConnectToPendant().then((linked) {
+      if (linked) {
+        isConnected = true;
+        lastCommandFeedback = 'Live BLE GATT link established with SafeGuard ESP32 Pendant!';
+        notifyListeners();
+      }
+    }));
+
     _statusSub = _bleService.pendantStatusStream.listen((data) {
       final type = data['t']?.toString();
       if (type == 'status') {
-        if (data['bat'] != null) {
-          batteryPercent = (data['bat'] as num).toInt().clamp(0, 100);
-        }
         if (data['mode'] != null) {
           ownerMode = data['mode'] == 'child'
               ? PendantOwnerMode.child
@@ -348,17 +353,43 @@ class WearableController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Strobe the pendant's LED for 10 seconds to find it nearby
-  Future<void> findPendantLedStrobe() async {
+  /// Strobe the pendant's LED for 8-10 seconds & print in ESP32 Serial Monitor
+  Future<bool> findPendantLedStrobe() async {
     isFinding = true;
-    lastCommandFeedback = 'Strobing pendant status LED for 10 seconds…';
+    lastCommandFeedback = 'Sending CMD:BLINK over BLE to strobe ESP32 GPIO8 LED & beep speaker…';
     notifyListeners();
 
-    await _bleService.sendPendantCommand('CMD:FIND');
-    await Future.delayed(const Duration(seconds: 2));
+    // Send CMD:BLINK (firmware accepts BLINK or FIND)
+    bool sent = await _bleService.sendPendantCommand('CMD:BLINK');
+    if (!sent) {
+      sent = await _bleService.sendPendantCommand('CMD:FIND');
+    }
+
+    if (sent) {
+      isConnected = true;
+    }
+    await Future.delayed(const Duration(milliseconds: 600));
     isFinding = false;
-    lastCommandFeedback = 'Pendant LED strobe activated.';
+    lastCommandFeedback = sent
+        ? 'ESP32 received CMD:BLINK! Blinking GPIO8 LED + Speaker for 8s & printed in Serial Monitor.'
+        : 'Connecting to ESP32 SafeGuard over Bluetooth... (Ensure pendant is powered on)';
     notifyListeners();
+    return sent;
+  }
+
+  /// Trigger the physical ESP32 Pendant's SOS (Alarm + SMS + Call + Serial print) from the Phone App
+  Future<bool> triggerRemotePendantSos() async {
+    lastCommandFeedback = 'Sending CMD:SOS over BLE to trigger ESP32 Pendant Alarm + SMS + Call…';
+    notifyListeners();
+    final sent = await _bleService.sendPendantCommand('CMD:SOS');
+    if (sent) {
+      isConnected = true;
+    }
+    lastCommandFeedback = sent
+        ? 'ESP32 received CMD:SOS from App! Executing Pendant Alarm + SMS + Call & printed in Serial Monitor.'
+        : 'Pendant SOS signal queued (Dispatching emergency alert via Phone network).';
+    notifyListeners();
+    return sent;
   }
 
   Future<void> toggleConnection() async {

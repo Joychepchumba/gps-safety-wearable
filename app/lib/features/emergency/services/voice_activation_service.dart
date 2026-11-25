@@ -1,11 +1,11 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 import '../../../core/di/service_locator.dart';
@@ -16,64 +16,43 @@ import '../../../core/services/notification_service.dart';
 typedef OnWakeWordDetectedCallback = void Function();
 typedef BackgroundVoiceService = VoiceActivationService;
 
-/// Native Flutter Speech-to-Text Voice SOS Activation Service.
+/// Voice Activation & Background Voice Service based directly on the
+/// Lindana baseline (`f719c882427d46639e537aeee611f0979bc51aa4`):
 ///
-/// Runs continuous speech recognition via Flutter `speech_to_text` both in the
-/// foreground and in the background (powered by the SafeLink microphone
-/// foreground service).
-///
-/// Recognizes both English ("help", "help me", "send help", "emergency",
-/// "save me", "call police", etc.) and Kiswahili ("msaada", "tuma msaada",
-/// "nisaidie", "kujeni hapa", "piga polisi", "okoa maisha", etc.) as well as
-/// user-configured custom emergency phrases.
+/// - Uses a 2+ word user-configured wake phrase (default `'tuma msaada'`).
+/// - Listens in 10-second windows (`listenFor: 10s`, `pauseFor: 4s`,
+///   `cancelOnError: true`) with no hardcoded `localeId` in background mode so
+///   the device language works seamlessly for both Kiswahili and English.
+/// - Checks only on `result.finalResult` using `_phraseDetected(spoken, phrase)`
+///   (`spoken.contains(phrase)` or all words of the 2+ word phrase present),
+///   preventing accidental triggers from partial speech hypotheses.
+/// - Can be stopped (`stop()` / `pause()`) when opening `VoiceActivationPage`
+///   ("FREEDOM FOR THE MIC") or during active panic mode, and resumed
+///   (`startIfEnabled()` / `resume()`) when leaving `VoiceActivationPage`.
 class VoiceActivationService with WidgetsBindingObserver {
   static final VoiceActivationService instance =
       VoiceActivationService._internal();
+
   VoiceActivationService._internal() {
     try {
       WidgetsBinding.instance.addObserver(this);
+      FlutterForegroundTask.addTaskDataCallback(_onForegroundTaskData);
     } catch (_) {}
   }
 
-  static const Duration _triggerCooldown = Duration(seconds: 12);
-
   final stt.SpeechToText _speech = stt.SpeechToText();
 
-  bool _speechReady = false;
+  bool _initialized = false;
+  bool _isListening = false;
   bool _wantListening = false;
-  bool _isSpeechListening = false;
-  bool _isStartingStt = false;
-  bool _isEnabled = true;
-  bool _inInteractiveTest = false;
+  bool _isEnabled = false;
+  bool _isPausedForConfigOrPanic = false;
   String _wakePhrase = 'tuma msaada';
 
   DateTime? _lastTriggerAt;
-  DateTime? _lastListenStartAt;
-  Timer? _sttRestartTimer;
-  Timer? _watchdogTimer;
-
-  static const List<String> defaultWakePhrases = [
-    'tuma msaada',
-    'nisaidie',
-    'nisaidie haraka',
-    'kujeni hapa',
-    'piga polisi',
-    'okoa maisha',
-    'help me',
-    'help me now',
-    'send help',
-    'call police',
-    'call the police',
-  ];
+  static const Duration _triggerCooldown = Duration(seconds: 10);
 
   OnWakeWordDetectedCallback? onWakeWordDetected;
-  void Function(
-    String heard,
-    double confidence,
-    bool isFinal,
-    String? matchedKeyword,
-  )?
-  _interactiveTestCallback;
 
   final ValueNotifier<String> lastHeardWords = ValueNotifier<String>('');
   final ValueNotifier<String?> lastDetectedKeyword = ValueNotifier<String?>(
@@ -85,89 +64,102 @@ class VoiceActivationService with WidgetsBindingObserver {
   final ValueNotifier<bool> isTranscribing = ValueNotifier<bool>(false);
   final ValueNotifier<bool> isListeningNotifier = ValueNotifier<bool>(false);
 
-  bool get isListening =>
-      _wantListening || _isSpeechListening || _speech.isListening;
+  bool get isListening => _isListening || _speech.isListening;
   bool get isEnabled => _isEnabled;
   String get wakePhrase => _wakePhrase;
 
+  // ── 5-second watchdog callback from FlutterForegroundTask ─────────────────
+  void _onForegroundTaskData(Object data) {
+    if (data == 'WATCHDOG_TICK') {
+      if (_isEnabled && _wantListening && !_isPausedForConfigOrPanic && !_isListening) {
+        _listen();
+      }
+    } else if (data == 'ALERT_PHRASE_DETECTED') {
+      onWakeWordDetected?.call();
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_isEnabled) return;
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.hidden) {
-      debugPrint(
-        '[VOICE STT] App moved to background ($state) — keeping continuous voice protection alive',
-      );
-      BackgroundProtectionService.start(voiceEnabled: true, shakeEnabled: true);
-      if (_wantListening && !_inInteractiveTest) {
-        _restartSttSoon(delay: const Duration(milliseconds: 500));
-      }
-    } else if (state == AppLifecycleState.resumed) {
-      debugPrint('[VOICE STT] App resumed — verifying active voice listener');
-      if (_isEnabled && !_inInteractiveTest) {
-        _wantListening = true;
-        _restartSttSoon(delay: const Duration(milliseconds: 300));
+    if (!_isEnabled || _isPausedForConfigOrPanic) return;
+    if (state == AppLifecycleState.resumed) {
+      if (_wantListening && !_isListening) {
+        Future.delayed(const Duration(milliseconds: 300), _listen);
       }
     }
   }
 
-  /// Simulates voice phrase detection (for testing & demo on emulators/devices)
-  void simulateVoiceDetected({String? simulatedPhrase}) {
-    final phrase = simulatedPhrase ?? _wakePhrase;
-    debugPrint(
-      '🎙️ [VOICE SIMULATION] Simulated emergency voice trigger invoked ("$phrase")!',
-    );
-    lastHeardWords.value = phrase;
-    lastDetectedKeyword.value = phrase;
-    lastDetectedAt.value = DateTime.now();
-    _notifyKeywordDetected(keyword: phrase, heardText: phrase, testOnly: false);
-    onWakeWordDetected?.call();
+  /// Call this whenever contacts are loaded so background preferences stay synced.
+  static Future<void> saveContactsForBackground(
+    List<Map<String, dynamic>> contacts,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('emergency_contacts_json', jsonEncode(contacts));
   }
 
-  /// Loads saved voice settings from persistent storage.
+  /// Call this whenever GPS position updates.
+  static Future<void> savePositionForBackground(
+    double lat,
+    double lng,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('last_known_lat', lat);
+    await prefs.setDouble('last_known_lng', lng);
+  }
+
+  /// Loads saved voice settings from SharedPreferences.
   Future<void> init({OnWakeWordDetectedCallback? onDetected}) async {
     if (onDetected != null) {
       onWakeWordDetected = onDetected;
     }
+    await _reloadPrefs();
+  }
+
+  Future<void> _reloadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    _isEnabled = prefs.getBool('voice_activation_enabled') ?? true;
-    _wakePhrase = prefs.getString('voice_wake_word') ?? 'tuma msaada';
+    _isEnabled = prefs.getBool('voice_activation_enabled') ?? false;
+    _wakePhrase = (prefs.getString('voice_wake_word') ?? 'tuma msaada').trim();
+    if (_wakePhrase.isEmpty) {
+      _wakePhrase = 'tuma msaada';
+    }
   }
 
   Future<void> updateSettings({
     required bool enabled,
     required String phrase,
+    bool startImmediately = true,
   }) async {
     _isEnabled = enabled;
-    _wakePhrase = phrase.trim().toLowerCase();
+    _wakePhrase = phrase.trim().isNotEmpty ? phrase.trim() : 'tuma msaada';
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('voice_activation_enabled', enabled);
+    await prefs.setBool('voice_activation_enabled', _isEnabled);
     await prefs.setString('voice_wake_word', _wakePhrase);
 
-    if (enabled) {
-      await startListening();
-    } else {
-      stopListening();
-    }
-  }
+    await BackgroundProtectionService.updateStatus(
+      voiceEnabled: _isEnabled,
+      shakeEnabled: true,
+      wakePhrase: _wakePhrase,
+    );
 
-  Future<void> startIfEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    _isEnabled = prefs.getBool('voice_activation_enabled') ?? _isEnabled;
-    _wakePhrase = prefs.getString('voice_wake_word') ?? _wakePhrase;
+    if (!startImmediately) return;
+
     if (_isEnabled) {
-      await startListening();
+      await startIfEnabled();
+    } else {
+      await stop();
     }
   }
 
-  Future<void> stop() async {
-    stopListening();
-  }
-
-  Future<void> start() async {
-    await startListening();
+  Future<void> updateWakeWord(String newPhrase) async {
+    _wakePhrase = newPhrase.trim().isNotEmpty ? newPhrase.trim() : 'tuma msaada';
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('voice_wake_word', _wakePhrase);
+    await BackgroundProtectionService.updateStatus(
+      voiceEnabled: _isEnabled,
+      shakeEnabled: true,
+      wakePhrase: _wakePhrase,
+    );
   }
 
   Future<bool> _ensureMicPermission() async {
@@ -176,732 +168,414 @@ class VoiceActivationService with WidgetsBindingObserver {
       if (!status.isGranted) {
         status = await Permission.microphone.request();
       }
-      if (!status.isGranted) {
-        debugPrint('[VOICE STT] Microphone permission not granted');
-      }
       return status.isGranted;
-    } catch (e) {
-      debugPrint('[VOICE STT] Permission error: $e');
+    } catch (_) {
       return false;
     }
   }
 
-  /// Starts continuous speech-to-text listening in foreground & background.
-  Future<void> startListening() async {
+  /// Starts background voice monitoring if `voice_activation_enabled` is true.
+  /// Matches `BackgroundVoiceService.instance.startIfEnabled()` from Lindana `f719c88`.
+  Future<void> startIfEnabled() async {
+    await _reloadPrefs();
+    if (!_isEnabled) return;
+
     if (!await _ensureMicPermission()) return;
 
-    // If already actively listening or starting, do not double-trigger
-    if (_wantListening &&
-        !_inInteractiveTest &&
-        (_speech.isListening || _isStartingStt)) {
-      isListeningNotifier.value = true;
-      return;
-    }
-
-    _inInteractiveTest = false;
-    _interactiveTestCallback = null;
+    _isPausedForConfigOrPanic = false;
     _wantListening = true;
-    isListeningNotifier.value = true;
-    debugPrint(
-      '[VOICE STT] Starting continuous speech recognition (target: "$_wakePhrase")...',
+
+    await BackgroundProtectionService.start(
+      voiceEnabled: true,
+      shakeEnabled: true,
+      wakePhrase: _wakePhrase,
     );
 
-    // Ensure background service is running on Android so mic stays alive when screen is off or app is minimised
-    unawaited(
-      BackgroundProtectionService.start(voiceEnabled: true, shakeEnabled: true),
-    );
-
-    final ok = await _initSpeech();
-    if (ok) {
-      await _startContinuousStt();
-      _startWatchdog();
-    } else {
-      debugPrint(
-        '[VOICE STT] Speech recognizer initialization deferred; retrying...',
-      );
-      _restartSttSoon(delay: const Duration(seconds: 2));
-      _startWatchdog();
+    if (!_isListening) {
+      await _listen();
     }
   }
 
-  /// Stops voice detection and cancels all auto-restart timers.
-  void stopListening() {
+  Future<void> startListening() => startIfEnabled();
+
+  /// Stops voice recognition so `VoiceActivationPage` has exclusive access to
+  /// the microphone ("FREEDOM FOR THE MIC") or when disabled.
+  Future<void> stop() async {
+    _isPausedForConfigOrPanic = true;
     _wantListening = false;
-    _isSpeechListening = false;
-    _inInteractiveTest = false;
-    _interactiveTestCallback = null;
+    _isListening = false;
     isListeningNotifier.value = false;
     isTranscribing.value = false;
-    _sttRestartTimer?.cancel();
-    _sttRestartTimer = null;
-    _watchdogTimer?.cancel();
-    _watchdogTimer = null;
-
     try {
-      _speech.stop();
+      await _speech.stop();
     } catch (_) {}
-    debugPrint('[VOICE STT] Continuous voice detection stopped');
   }
 
-  // --------------------------------------------------------------------------
-  // CONTINUOUS SPEECH RECOGNITION ENGINE
-  // --------------------------------------------------------------------------
-
-  void _onSpeechError(SpeechRecognitionError err) {
-    final msg = err.errorMsg;
-    _isSpeechListening = false;
-    _isStartingStt = false;
-    isTranscribing.value = false;
-
-    if (_inInteractiveTest) {
-      return;
-    }
-
-    if (_wantListening) {
-      if (msg == 'error_busy') {
-        // Android recognizer is still releasing previous session; cancel cleanly and wait 2.5s
-        try {
-          _speech.cancel();
-        } catch (_) {}
-        _restartSttSoon(delay: const Duration(milliseconds: 2500));
-      } else if (msg == 'error_no_match' ||
-          msg == 'error_speech_timeout' ||
-          msg == 'error_client') {
-        _restartSttSoon(delay: const Duration(milliseconds: 600));
-      } else {
-        debugPrint('[VOICE STT] Engine status notice: $msg');
-        _restartSttSoon(delay: const Duration(milliseconds: 1000));
-      }
-    }
+  void stopListening() {
+    unawaited(stop());
   }
 
-  void _onSpeechStatus(String status) {
-    if (status == 'listening') {
-      _isSpeechListening = true;
-      _isStartingStt = false;
-      isTranscribing.value = true;
-      isListeningNotifier.value = true;
-    } else if (status == 'done' || status == 'notListening') {
-      _isSpeechListening = false;
-      _isStartingStt = false;
-      isTranscribing.value = false;
-      if (_wantListening &&
-          !_inInteractiveTest &&
-          (_sttRestartTimer == null || !_sttRestartTimer!.isActive)) {
-        // Native session ended (timeout or pause); seamlessly restart continuous listening
-        _restartSttSoon(delay: const Duration(milliseconds: 650));
-      } else if (!_wantListening) {
-        isListeningNotifier.value = false;
-      }
-    }
-  }
+  Future<void> pause() => stop();
+  Future<void> resume() => startIfEnabled();
 
-  Future<bool> _initSpeech() async {
-    try {
-      if (!_speechReady) {
-        _speechReady = await _speech.initialize(
-          onError: _onSpeechError,
-          onStatus: _onSpeechStatus,
-          debugLogging: false,
+  // ── Speech loop (Exact Lindana f719c88 _VoiceTaskHandler._listen logic) ───
+  Future<void> _listen() async {
+    if (!_wantListening || _isPausedForConfigOrPanic || !_isEnabled) return;
+
+    if (!_initialized) {
+      try {
+        _initialized = await _speech.initialize(
+          onStatus: (status) {
+            if (status == 'listening') {
+              _isListening = true;
+              isListeningNotifier.value = true;
+              isTranscribing.value = true;
+            } else if (status == 'done' || status == 'notListening') {
+              _isListening = false;
+              isListeningNotifier.value = false;
+              isTranscribing.value = false;
+              if (_wantListening && !_isPausedForConfigOrPanic && _isEnabled) {
+                Future.delayed(const Duration(milliseconds: 500), _listen);
+              }
+            }
+          },
+          onError: (_) {
+            _isListening = false;
+            isListeningNotifier.value = false;
+            isTranscribing.value = false;
+            if (_wantListening && !_isPausedForConfigOrPanic && _isEnabled) {
+              Future.delayed(const Duration(seconds: 3), _listen);
+            }
+          },
         );
+      } catch (_) {
+        _initialized = false;
       }
-      // CRITICAL: SpeechToText is a singleton whose initialize() only assigns
-      // errorListener/statusListener the first time. Re-bind them explicitly!
-      _speech.errorListener = _onSpeechError;
-      _speech.statusListener = _onSpeechStatus;
-    } catch (e) {
-      debugPrint('[VOICE STT] Initialization exception: $e');
-      _speechReady = false;
     }
-    return _speechReady;
-  }
 
-  void _restartSttSoon({Duration delay = const Duration(milliseconds: 350)}) {
-    if (!_wantListening || _inInteractiveTest) return;
-    _sttRestartTimer?.cancel();
-    _sttRestartTimer = Timer(delay, () {
-      if (_wantListening && !_inInteractiveTest) {
-        _isSpeechListening = false;
-        _startContinuousStt();
-      }
-    });
-  }
+    if (!_initialized || !_wantListening || _isPausedForConfigOrPanic) return;
+    if (_speech.isListening) return;
 
-  /// Watchdog timer keeps recognition alive across background lifecycle changes
-  /// and recovers if the platform recognizer silently stops after 45s.
-  void _startWatchdog() {
-    _watchdogTimer?.cancel();
-    _watchdogTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!_wantListening || _inInteractiveTest || _isStartingStt) return;
-      // Do not race with a scheduled restart timer
-      if (_sttRestartTimer != null && _sttRestartTimer!.isActive) return;
+    _isListening = true;
+    isListeningNotifier.value = true;
+    isTranscribing.value = true;
 
-      final now = DateTime.now();
-      final recentlyStarted =
-          _lastListenStartAt != null &&
-          now.difference(_lastListenStartAt!) < const Duration(seconds: 5);
-      if (recentlyStarted) return;
-
-      final stuckTooLong =
-          _lastListenStartAt != null &&
-          now.difference(_lastListenStartAt!) > const Duration(seconds: 48);
-
-      if (!_speech.isListening || !_isSpeechListening || stuckTooLong) {
-        if (stuckTooLong) {
-          try {
-            _speech.stop();
-          } catch (_) {}
-          _isSpeechListening = false;
-        }
-        _restartSttSoon(delay: const Duration(milliseconds: 500));
-      }
-    });
-  }
-
-  Future<void> _startContinuousStt() async {
-    if (!_wantListening || _inInteractiveTest || _isStartingStt) return;
-
-    _isStartingStt = true;
     try {
-      await _initSpeech();
-      if (_speech.isListening) {
-        _isSpeechListening = true;
-        _isStartingStt = false;
-        isListeningNotifier.value = true;
-        return;
-      }
-
-      _isSpeechListening = true;
-      isListeningNotifier.value = true;
-      _lastListenStartAt = DateTime.now();
-
       await _speech.listen(
-        onResult: _handleSpeechResult,
+        onResult: (result) async {
+          lastHeardWords.value = result.recognizedWords;
+          if (result.finalResult) {
+            _isListening = false;
+            isTranscribing.value = false;
+            final spoken = result.recognizedWords.toLowerCase().trim();
+            final phrase = _wakePhrase.toLowerCase().trim();
+            if (_phraseDetected(spoken, phrase)) {
+              await _handleDetected(spoken);
+            }
+            if (_wantListening && !_isPausedForConfigOrPanic && _isEnabled) {
+              Future.delayed(const Duration(milliseconds: 300), _listen);
+            }
+          }
+        },
+        // No localeId — uses the device's configured language.
+        // ignore: deprecated_member_use
+        listenFor: const Duration(seconds: 10),
+        // ignore: deprecated_member_use
+        pauseFor: const Duration(seconds: 4),
         listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-          listenFor: const Duration(seconds: 45),
-          pauseFor: const Duration(seconds: 10),
+          cancelOnError: true,
         ),
       );
-    } catch (e) {
-      debugPrint('[VOICE STT] Listen start notice: $e');
-      _isSpeechListening = false;
-      _restartSttSoon(delay: const Duration(milliseconds: 1800));
-    } finally {
-      _isStartingStt = false;
+    } catch (_) {
+      _isListening = false;
+      isListeningNotifier.value = false;
+      isTranscribing.value = false;
+      if (_wantListening && !_isPausedForConfigOrPanic && _isEnabled) {
+        Future.delayed(const Duration(seconds: 3), _listen);
+      }
     }
   }
 
-  void _handleSpeechResult(SpeechRecognitionResult result) {
-    final primaryWords = result.recognizedWords.trim();
-    if (primaryWords.isEmpty && result.alternates.isEmpty) return;
+  /// Exact Lindana `f719c88` wake phrase detector:
+  /// Matches if `spoken` contains the full `phrase`, or if `phrase` has >= 2 words
+  /// and every word in `phrase` appears in `spoken`.
+  bool _phraseDetected(String spoken, String phrase) {
+    if (spoken.isEmpty || phrase.isEmpty) return false;
+    if (spoken.contains(phrase)) return true;
+    final words = phrase
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.length < 2) return false;
+    return words.every((w) => spoken.contains(w));
+  }
 
-    // Collect primary + all alternate transcriptions from the recognizer
-    final candidates = <String>[
-      if (primaryWords.isNotEmpty) primaryWords,
-      for (final alt in result.alternates)
-        if (alt.recognizedWords.trim().isNotEmpty) alt.recognizedWords.trim(),
-    ];
+  bool matchesWakePhrase(String heard, {String? customPhrase}) {
+    final spoken = heard.toLowerCase().trim();
+    final target = (customPhrase ?? _wakePhrase).toLowerCase().trim();
+    return _phraseDetected(spoken, target);
+  }
 
-    final displayWords = primaryWords.isNotEmpty
-        ? primaryWords
-        : candidates.first;
-    lastHeardWords.value = displayWords;
-    debugPrint(
-      '🎙️ [VOICE STT HEARD] "$displayWords" (alternates: ${candidates.length})',
-    );
-
-    String? matchedKeyword;
-    String matchedTranscript = displayWords;
-    for (final candidate in candidates) {
-      final match = findMatchedKeyword(candidate);
-      if (match != null) {
-        matchedKeyword = match;
-        matchedTranscript = candidate;
-        break;
-      }
+  String? findMatchedKeyword(String heard) {
+    if (matchesWakePhrase(heard)) {
+      return _wakePhrase;
     }
+    return null;
+  }
 
-    if (_inInteractiveTest && _interactiveTestCallback != null) {
-      final conf = result.confidence > 0
-          ? result.confidence
-          : (matchedKeyword != null ? 0.94 : 0.82);
-      if (matchedKeyword != null) {
-        lastDetectedKeyword.value = matchedKeyword;
-        lastDetectedAt.value = DateTime.now();
-        _notifyKeywordDetected(
-          keyword: matchedKeyword,
-          heardText: matchedTranscript,
-          testOnly: true,
-        );
-      }
-      _interactiveTestCallback!(
-        displayWords,
-        conf,
-        result.finalResult,
-        matchedKeyword,
-      );
+  Future<void> _handleDetected(String heardText) async {
+    final now = DateTime.now();
+    if (_lastTriggerAt != null &&
+        now.difference(_lastTriggerAt!) < _triggerCooldown) {
       return;
     }
-
-    if (matchedKeyword != null) {
-      // Only fire real SOS on final speech recognition result (or high-confidence >= 0.72)
-      // to eliminate false triggers from transient mid-sentence partial hypotheses.
-      final bool highConfidencePartial =
-          result.confidence >= 0.72 && matchedTranscript.split(' ').length >= 2;
-      if (result.finalResult || highConfidencePartial) {
-        _fireTrigger(
-          matchedKeyword: matchedKeyword,
-          heardText: matchedTranscript,
-        );
-      } else {
-        debugPrint(
-          '[VOICE STT] Waiting for final speech result before triggering for "$matchedKeyword" (heard partial: "$matchedTranscript")',
-        );
-      }
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // WAKE PHRASE MATCHING & TRIGGER DISPATCH
-  // --------------------------------------------------------------------------
-
-  void _notifyKeywordDetected({
-    required String keyword,
-    required String heardText,
-    required bool testOnly,
-  }) {
-    // 1. High-priority system pop-up notification (works in background & foreground)
-    try {
-      sl<NotificationService>().showVoiceKeywordDetectedPopup(
-        keyword: keyword,
-        heardText: heardText,
-        testOnly: testOnly,
-      );
-    } catch (e) {
-      debugPrint('[VOICE STT] Popup notification notice: $e');
-    }
-
-    // 2. Visible in-app floating banner if context is mounted
-    try {
-      final ctx = NavigationService.navigatorKey.currentContext;
-      if (ctx != null && ctx.mounted) {
-        ScaffoldMessenger.of(ctx).hideCurrentSnackBar();
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: const Color(0xFF059669),
-            duration: const Duration(seconds: 4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
-            ),
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.record_voice_over_rounded,
-                  color: Colors.white,
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Voice Keyword Detected: "$keyword"',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        testOnly
-                            ? 'Heard "$heardText" — Voice recognition verified!'
-                            : 'Heard "$heardText" — Launching Emergency SOS!',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      }
-    } catch (_) {}
-  }
-
-  void _fireTrigger({
-    required String matchedKeyword,
-    required String heardText,
-  }) {
-    final now = DateTime.now();
-    final last = _lastTriggerAt;
-    if (last != null && now.difference(last) < _triggerCooldown) return;
     _lastTriggerAt = now;
 
-    lastDetectedKeyword.value = matchedKeyword;
+    lastDetectedKeyword.value = _wakePhrase;
     lastDetectedAt.value = now;
 
-    // Auto-clear the banner state after 10 seconds so it doesn't stay stuck on HomeScreen
+    // Auto-clear lastDetectedKeyword after 10s
     Future.delayed(const Duration(seconds: 10), () {
       if (lastDetectedAt.value == now) {
         lastDetectedKeyword.value = null;
       }
     });
 
-    debugPrint(
-      '🚨 [VOICE SOS CONFIRMED] Keyword "$matchedKeyword" detected (heard: "$heardText")! Triggering SOS.',
-    );
+    // 1. Show local notification ("📩 Alert Sent via Voice")
+    await _showLocalNotification();
 
-    _notifyKeywordDetected(
-      keyword: matchedKeyword,
-      heardText: heardText,
-      testOnly: false,
-    );
-
+    // 2. Fire callback to dispatch silent SMS/Supabase alert & show VoiceAlertDialog
     onWakeWordDetected?.call();
   }
 
-  bool matchesWakePhrase(String heard) => findMatchedKeyword(heard) != null;
-
-  /// Returns the matched keyword/phrase if [heard] matches either the user's
-  /// custom wake phrase or any built-in emergency keyword (Kiswahili or English),
-  /// or `null` if no keyword matched.
-  String? findMatchedKeyword(String heard) {
-    if (heard.isEmpty) return null;
-    final cleanHeard = _normalize(heard);
-    if (cleanHeard.isEmpty) return null;
-
-    // 1. Check user's custom configured phrase first
-    if (_matchesSinglePhrase(cleanHeard, _wakePhrase)) {
-      return _wakePhrase;
-    }
-
-    // 2. Check all default emergency phrases (Kiswahili & English)
-    for (final phrase in defaultWakePhrases) {
-      if (_matchesSinglePhrase(cleanHeard, phrase)) {
-        return phrase;
-      }
-    }
-
-    return null;
+  /// Simulates voice phrase detection (for demo/testing)
+  void simulateVoiceDetected({String? simulatedPhrase}) {
+    final phrase = simulatedPhrase ?? _wakePhrase;
+    lastHeardWords.value = phrase;
+    unawaited(_handleDetected(phrase));
   }
 
-  String _normalize(String input) {
-    return input
-        .toLowerCase()
-        .replaceAll(RegExp(r"[^\w\s]"), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-  }
-
-  // Phonetic aliases & sound-alikes for Kiswahili & English emergency triggers.
-  // Crucial when Android STT is in English mode while user speaks Kiswahili (or vice versa).
-  // Kept strictly unambiguous — no everyday English words like "mother", "please", "health", etc.
-  static const Map<String, List<String>> _phoneticAliases = {
-    'tuma': [
-      'tuma',
-      'to ma',
-      'touma',
-      'thuma',
-      'tumaa',
-      'chuma',
-    ],
-    'msaada': [
-      'msaada',
-      'masada',
-      'msada',
-      'musaada',
-      'mussada',
-      'musada',
-      'massada',
-      'my sada',
-      'sahada',
-    ],
-    'nisaidie': [
-      'nisaidie',
-      'ni saidie',
-      'nisadie',
-      'nisaidia',
-      'knee side yeah',
-    ],
-    'haraka': ['haraka', 'harak'],
-    'kujeni': [
-      'kujeni',
-      'kujeni hapa',
-      'who jenny',
-      'coojee',
-    ],
-    'hapa': ['hapa', 'harper', 'hopper'],
-    'piga': [
-      'piga',
-      'peega',
-      'pika',
-    ],
-    'polisi': [
-      'polisi',
-      'police',
-      'policeman',
-      'polici',
-      'polize',
-    ],
-    'okoa': ['okoa', 'okwa', 'okowa'],
-    'maisha': [
-      'maisha',
-      'maysha',
-      'may sha',
-      'mysha',
-      'myisha',
-    ],
-    'help': [
-      'help',
-      'help me',
-      'halp',
-    ],
-    'police': ['police', 'polisi'],
-  };
-
-  bool _matchesSinglePhrase(String cleanHeard, String target) {
-    final cleanTarget = _normalize(target);
-    if (cleanTarget.isEmpty || cleanHeard.isEmpty) return false;
-
-    final heardWords = cleanHeard
-        .split(' ')
-        .where((w) => w.isNotEmpty)
-        .toList();
-    final targetWords = cleanTarget
-        .split(' ')
-        .where((w) => w.isNotEmpty)
-        .toList();
-    if (targetWords.isEmpty || heardWords.isEmpty) return false;
-
-    // 1. Exact word-bounded phrase match
-    final RegExp boundaryRegex = RegExp(
-      r'(^|\s)' + RegExp.escape(cleanTarget) + r'(\s|$)',
-    );
-    if (boundaryRegex.hasMatch(cleanHeard)) return true;
-
-    // 2. Check phonetic aliases & strict fuzzy word similarity for ALL target words
-    int matchedKeywords = 0;
-    for (final word in targetWords) {
-      if (_heardContainsWordOrAlias(cleanHeard, heardWords, word)) {
-        matchedKeywords++;
-      }
-    }
-
-    if (matchedKeywords >= targetWords.length) return true;
-
-    // 3. Whole-phrase sliding window high-confidence match (>= 0.86 similarity)
-    final windowSize = targetWords.length;
-    if (heardWords.length >= windowSize) {
-      for (int i = 0; i <= heardWords.length - windowSize; i++) {
-        final windowStr = heardWords.sublist(i, i + windowSize).join(' ');
-        if (_similarity(windowStr, cleanTarget) >= 0.86) {
-          return true;
-        }
-      }
-    } else if (targetWords.length == 1 &&
-        _similarity(cleanHeard, cleanTarget) >= 0.88) {
-      return true;
-    }
-
-    return false;
-  }
-
-  bool _heardContainsWordOrAlias(
-    String cleanHeard,
-    List<String> heardWords,
-    String targetWord,
-  ) {
-    if (heardWords.contains(targetWord)) return true;
-
-    final aliases = _phoneticAliases[targetWord];
-    if (aliases != null) {
-      for (final alias in aliases) {
-        if (alias.contains(' ')) {
-          if (cleanHeard.contains(alias)) return true;
-        } else if (heardWords.contains(alias)) {
-          return true;
-        }
-      }
-    }
-
-    // Strict fuzzy word comparison only for long words >= 5 chars
-    if (targetWord.length >= 5) {
-      for (final hw in heardWords) {
-        if ((hw.length - targetWord.length).abs() <= 1 &&
-            _similarity(hw, targetWord) >= 0.86) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  /// Normalized Levenshtein similarity in [0.0, 1.0].
-  double _similarity(String a, String b) {
-    if (a == b) return 1.0;
-    if (a.isEmpty || b.isEmpty) return 0.0;
-    final maxLen = max(a.length, b.length);
-    final dist = _levenshtein(a, b);
-    return (maxLen - dist) / maxLen;
-  }
-
-  int _levenshtein(String s, String t) {
-    final m = s.length;
-    final n = t.length;
-    final dp = List.generate(m + 1, (_) => List<int>.filled(n + 1, 0));
-    for (var i = 0; i <= m; i++) {
-      dp[i][0] = i;
-    }
-    for (var j = 0; j <= n; j++) {
-      dp[0][j] = j;
-    }
-    for (var i = 1; i <= m; i++) {
-      for (var j = 1; j <= n; j++) {
-        final cost = s[i - 1] == t[j - 1] ? 0 : 1;
-        dp[i][j] = min(
-          min(dp[i - 1][j] + 1, dp[i][j - 1] + 1),
-          dp[i - 1][j - 1] + cost,
-        );
-      }
-    }
-    return dp[m][n];
-  }
-
-  // --------------------------------------------------------------------------
-  // INTERACTIVE TESTING (Used by VoiceSettingsScreen without breaking singleton)
-  // --------------------------------------------------------------------------
-
-  Future<bool> startInteractiveTest({
-    required String candidatePhrase,
-    required void Function(
-      String heard,
-      double confidence,
-      bool isFinal,
-      String? matchedKeyword,
-    )
-    onResult,
-  }) async {
-    if (!await _ensureMicPermission()) return false;
-
-    _sttRestartTimer?.cancel();
-    _inInteractiveTest = true;
-    _interactiveTestCallback = onResult;
-    _wakePhrase = candidatePhrase.trim().isNotEmpty
-        ? candidatePhrase.trim().toLowerCase()
-        : _wakePhrase;
-
+  Future<void> _showLocalNotification() async {
     try {
-      await _speech.stop();
-    } catch (_) {}
-    await Future.delayed(const Duration(milliseconds: 200));
-
-    final ready = await _initSpeech();
-    if (!ready) {
-      _inInteractiveTest = false;
-      _interactiveTestCallback = null;
-      return false;
-    }
-
-    try {
-      _isSpeechListening = true;
-      isTranscribing.value = true;
-      await _speech.listen(
-        onResult: _handleSpeechResult,
-        listenOptions: stt.SpeechListenOptions(
-          listenMode: stt.ListenMode.dictation,
-          partialResults: true,
-          cancelOnError: false,
-          listenFor: const Duration(seconds: 12),
-          pauseFor: const Duration(seconds: 4),
-        ),
+      await sl<NotificationService>().showEmergencyPopup(
+        id: 998,
+        title: '📩 Alert Sent via Voice',
+        body: 'Your emergency contacts have been notified. Help is on the way.',
+        payload: '/home',
       );
-      return true;
-    } catch (e) {
-      debugPrint('[VOICE STT] Interactive test start error: $e');
-      _inInteractiveTest = false;
-      _interactiveTestCallback = null;
-      return false;
+    } catch (_) {
+      try {
+        final plugin = FlutterLocalNotificationsPlugin();
+        await plugin.initialize(
+          settings: const InitializationSettings(
+            android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+          ),
+        );
+        await plugin.show(
+          id: 998,
+          title: '📩 Alert Sent via Voice',
+          body: 'Your emergency contacts have been notified. Help is on the way.',
+          notificationDetails: const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'lindana_emergency_v2',
+              'Emergency Alerts',
+              channelDescription: 'Voice phrase triggered emergency alert',
+              importance: Importance.max,
+              priority: Priority.high,
+              fullScreenIntent: true,
+              playSound: true,
+              enableVibration: true,
+            ),
+          ),
+        );
+      } catch (_) {}
     }
   }
 
-  Future<void> stopInteractiveTest({bool resumeContinuous = true}) async {
-    _inInteractiveTest = false;
-    _interactiveTestCallback = null;
-    try {
-      await _speech.stop();
-    } catch (_) {}
-    _isSpeechListening = false;
-    isTranscribing.value = false;
-
-    if (resumeContinuous && _isEnabled) {
-      await Future.delayed(const Duration(milliseconds: 250));
-      await startListening();
-    }
-  }
-
-  /// Tests phrase recognition directly via Flutter `speech_to_text` library.
-  Future<Map<String, dynamic>> testPhraseWithStt(
-    String candidatePhrase, {
-    Duration duration = const Duration(seconds: 5),
-    Function(String partialText)? onPartialHeard,
-  }) async {
-    String recognizedText = '';
-    String? matchedKeyword;
-
-    final started = await startInteractiveTest(
-      candidatePhrase: candidatePhrase,
-      onResult: (heard, confidence, isFinal, matched) {
-        recognizedText = heard;
-        onPartialHeard?.call(heard);
-        if (matched != null) {
-          matchedKeyword = matched;
-        }
-      },
+  /// Shows the Lindana `📩 ALERT SENT` confirmation dialog when wake phrase fires.
+  static void showVoiceAlertSentDialog() {
+    final ctx = NavigationService.navigatorKey.currentContext;
+    if (ctx == null || !ctx.mounted) return;
+    showGeneralDialog(
+      context: ctx,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.85),
+      pageBuilder: (dialogCtx, _, _) => const VoiceAlertSentDialog(),
+      transitionBuilder: (dialogCtx, anim, _, child) => ScaleTransition(
+        scale: CurvedAnimation(parent: anim, curve: Curves.easeOutBack),
+        child: child,
+      ),
+      transitionDuration: const Duration(milliseconds: 350),
     );
+  }
+}
 
-    if (!started) {
-      return {
-        'success': false,
-        'error': 'Speech recognizer unavailable or mic permission denied',
-      };
-    }
+/// Exact Lindana `f719c88` `_HomeVoiceAlertDialog` / `_VoiceAlertDialog`:
+/// Shown in-app when the wake phrase is detected and silent SMS alert is sent.
+class VoiceAlertSentDialog extends StatefulWidget {
+  const VoiceAlertSentDialog({super.key});
 
-    await Future.delayed(duration);
-    await stopInteractiveTest(resumeContinuous: _isEnabled);
+  @override
+  State<VoiceAlertSentDialog> createState() => _VoiceAlertSentDialogState();
+}
 
-    final isMatched =
-        matchedKeyword != null ||
-        (recognizedText.isNotEmpty &&
-            findMatchedKeyword(recognizedText) != null);
+class _VoiceAlertSentDialogState extends State<VoiceAlertSentDialog>
+    with TickerProviderStateMixin {
+  late AnimationController _pulseCtrl;
+  late Animation<double> _pulseAnim;
+  Timer? _auto;
+  int _count = 10;
 
-    return {
-      'success': true,
-      'transcription': recognizedText.isNotEmpty ? recognizedText : 'No clear speech detected. Please speak clearly into the microphone.',
-      'matched': isMatched,
-      'keyword': matchedKeyword ?? candidatePhrase,
-    };
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.85, end: 1.15).animate(
+      CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
+    );
+    _auto = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() => _count--);
+      if (_count <= 0) {
+        t.cancel();
+        _dismiss();
+      }
+    });
   }
 
-  /// Backwards-compatible alias for existing screens
-  Future<Map<String, dynamic>> recordAndTestPhrase(
-    String candidatePhrase, {
-    Duration duration = const Duration(seconds: 5),
-    Function(String partialText)? onPartialHeard,
-  }) async {
-    return testPhraseWithStt(
-      candidatePhrase,
-      duration: duration,
-      onPartialHeard: onPartialHeard,
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    _auto?.cancel();
+    super.dispose();
+  }
+
+  void _dismiss() {
+    if (mounted && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF1A6B8A), Color(0xFF4FABCB)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF4FABCB).withValues(alpha: 0.5),
+              blurRadius: 30,
+              spreadRadius: 5,
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedBuilder(
+              animation: _pulseAnim,
+              builder: (_, _) => Transform.scale(
+                scale: _pulseAnim.value,
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.mic_rounded,
+                    color: Colors.white,
+                    size: 40,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              '📩 ALERT SENT',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.2,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Wake phrase detected. SMS sent to your emergency contacts.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your location was included in the alert.',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.75),
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _dismiss,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF1A6B8A),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'OK — Dismiss ($_count)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

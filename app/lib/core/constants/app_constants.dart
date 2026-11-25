@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppConstants {
-  static const String policeNumber = '0721228989';
+  static const String policeNumber = '0783711202';
   static const String policeVoiceNumber = '0800720999';
   static const double emergencyRadiusMeters = 1000.0;
   static const int panicCountdownSeconds = 10;
@@ -14,8 +14,7 @@ class AppConstants {
   );
   static const String supabaseAnonKey = String.fromEnvironment(
     'SUPABASE_ANON_KEY',
-    defaultValue:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmYWd3ZGhwam5uYnVlaXlqbWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTkzMzUsImV4cCI6MjEwNTQ5NTMzNX0.Qw_rs_KJOZF8RkXWW62QBKnSafzJFkt9YBPqCRo9mlA',
+    defaultValue: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmYWd3ZGhwam5uYnVlaXlqbWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTkzMzUsImV4cCI6MjEwNTQ5NTMzNX0.Qw_rs_KJOZF8RkXWW62QBKnSafzJFkt9YBPqCRo9mlA',
   );
 
   static const String africasTalkingApiKey = String.fromEnvironment(
@@ -43,7 +42,8 @@ class AppConstants {
   /// 1. Checks Supabase `app_config` table for dynamic live ngrok tunnel
   /// 2. Falls back to compile-time --dart-define=BACKEND_URL or localhost
   static Future<String> getEffectiveBackendUrl() async {
-    if (_cachedDynamicBackendUrl != null && _cachedDynamicBackendUrl!.isNotEmpty) {
+    if (_cachedDynamicBackendUrl != null &&
+        _cachedDynamicBackendUrl!.isNotEmpty) {
       return _cachedDynamicBackendUrl!;
     }
     try {
@@ -74,7 +74,8 @@ class AppConstants {
   /// Permanent, serverless 3D Mapbox live tracking viewer hosted on GitHub Pages
   static const String trackingViewerBaseUrl = String.fromEnvironment(
     'TRACKING_VIEWER_URL',
-    defaultValue: 'https://joychepchumba.github.io/gps-safety-wearable/track.html',
+    defaultValue:
+        'https://joychepchumba.github.io/gps-safety-wearable/track.html',
   );
 
   /// Builds a permanent 3D Mapbox live tracking link that doesn't rely on ngrok
@@ -93,7 +94,8 @@ class AppConstants {
     if (session != null && session.isNotEmpty) queryParams['session'] = session;
     if (alertId != null && alertId.isNotEmpty) queryParams['id'] = alertId;
 
-    final uri = Uri.parse(trackingViewerBaseUrl).replace(queryParameters: queryParams);
+    final uri = Uri.parse(trackingViewerBaseUrl)
+        .replace(queryParameters: queryParams);
     return uri.toString();
   }
 }

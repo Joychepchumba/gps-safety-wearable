@@ -1,50 +1,34 @@
 /*
  * ==============================================================================
- * SafeGuard GPS Safety Pendant — Master Firmware (Indoor & Outdoor Multi-Tier)
+ * SafeGuard GPS Safety Pendant — Master Firmware v2.4
  * ==============================================================================
- * MCU: ESP32-C3 Super Mini / standard ESP32-C3
- * Author: Joy Kipkemboi — Strathmore University
+ * MCU: ESP32-C3 Super Mini + INMP441 + SIM800L + NEO-6M GPS + TTP223B Touch
  *
  * Hardware Wiring (Verified on Breadboard):
- *   - SIM800L TX -> GPIO5 (ESP32 RX)
- *   - SIM800L RX -> GPIO6 (ESP32 TX)
- *   - NEO-6M TX  -> GPIO4 (ESP32 RX)
- *   - NEO-6M RX  -> GPIO3 (ESP32 TX)
- *   - TTP223B Touch SIG -> GPIO2 (Active HIGH)
- *   - Microphone Input  -> GPIO1 (ADC1_CH1)
- *   - Status LED / Buzzer -> GPIO8
- *
- * Linked User:
- *   - ID:    7426cae6-d358-4a02-9e2f-c7839a864e93
- *   - Email: chepchumbajr@gmail.com
- *
- * Indoor & Outdoor Multi-Tier Location Engine:
- *   - TIER 1 (Outdoor): NEO-6M 3D Satellite GPS Fix (prioritized when outdoors).
- *   - TIER 2 (Indoor/Phone): Phone BLE Assisted GPS (phone forwards its fused GPS).
- *   - TIER 3 (Indoor/Wi-Fi): Real-time Wi-Fi IP Geolocation via ip-api.com (~0.5s).
- *   - TIER 4 (Indoor/GSM): Cellular Base-Station LBS via SIM800L (AT+CIPGSMLOC).
- *   - TIER 5 (Fallback): Calibrated Indoor Anchor saved in ESP32 Flash memory.
- *
- * Parental Control & Community BLE SOS Beacon (v2.2):
- *   - Adult Mode: Touch double-tap or hold on GPIO2 triggers SOS + phone app control.
- *   - Child Mode: Accidental touch SOS disabled; holding GPIO2 for 3s calls parent;
- *                 Parent can remotely Locate, Call, Strobe LED, or trigger SOS.
- *   - Community Responder BLE Beacon: Broadcasts 15-byte 'SL' distress packet (0xFFFF)
- *                 with live GPS coordinates so nearby SafeLink users detect SOS offline.
+ *   - SIM800L TX       -> GPIO5 (ESP32 RX)
+ *   - SIM800L RX       -> GPIO6 (ESP32 TX)
+ *   - NEO-6M TX        -> GPIO4 (ESP32 RX)
+ *   - NEO-6M RX        -> GPIO3 (ESP32 TX)
+ *   - TTP223B Touch    -> GPIO2 or GPIO1 (Active HIGH — both pins supported!)
+ *   - INMP441 I2S Mic  -> SCK=GPIO7, WS=GPIO10, SD=GPIO0
+ *   - Status LED       -> GPIO8
  * ==============================================================================
  */
 
 #define TINY_GSM_MODEM_SIM800
 #define TINY_GSM_RX_BUFFER 1024
 
+// ---- Exact Lindana v7 Model Configuration ----
+#define EIDSP_QUANTIZE_FILTERBANK 0
+#define EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW 2    // 0.5 s slices
+#ifndef TEST_MODE
+#define TEST_MODE 1                                // Emits [TEST_EVENT] millis=<ms> event=<name> over Serial
+#endif
+
 #include <Arduino.h>
 #include <esp_mac.h>
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
 #include <Preferences.h>
 #include <TinyGsmClient.h>
-
 #include <TinyGPSPlus.h>
 
 #include <BLEDevice.h>
@@ -53,27 +37,47 @@
 #include <BLE2902.h>
 #include <BLEAdvertising.h>
 
-// SafeGuard Embedded TinyML Keyword Spotting Model (13.4 KB)
-#include "safeguard_micro_model.h"
+#include <Lindana_inferencing.h>
+#include <ESP_I2S.h>
 
 // ------------------------------------------------------------------------------
-// 1. PIN DEFINITIONS (Working Breadboard Pins)
+// 1. PIN DEFINITIONS (Exact Breadboard + Lindana v7 Pins)
 // ------------------------------------------------------------------------------
 #define SIM_RX          5     // SIM800L TX -> ESP32 GPIO5
 #define SIM_TX          6     // SIM800L RX -> ESP32 GPIO6
 #define GPS_RX          4     // NEO-6M TX  -> ESP32 GPIO4
 #define GPS_TX          3     // NEO-6M RX  -> ESP32 GPIO3
 #define TOUCH_PIN       2     // TTP223B Touch SIG -> ESP32 GPIO2 (Active HIGH)
-#define PIN_MIC_ADC     1     // Electret Mic / MAX9814 Audio Out -> ESP32 GPIO1 (ADC1_CH1)
-#define PIN_STATUS_LED  8     // Onboard / External Status LED
+#define TOUCH_PIN_ALT   1     // Backup Touch pin -> ESP32 GPIO1 (Active HIGH)
+#define PIN_STATUS_LED  8     // Onboard / External Status LED (GPIO8)
+#define PIN_LED         8     // Alias for Lindana v7 alert_beep()
+#define LED_ON_LEVEL    HIGH
+
+// INMP441 I2S Pins (Exact Lindana v7 Pins)
+#define PIN_I2S_SCK     7
+#define PIN_I2S_WS      10
+#define PIN_I2S_SD      0
+#define USE_SPEAKER     0     // 0 = blink LED on GPIO8 (keeps GPIO2 free for Touch Sensor!)
+#define PIN_SPK         2
+
+// ---- Exact Lindana v7 Tuning ----
+#define GAIN_SHIFT          15      // 14 = louder, 16 = quieter
+#define TRIGGER_LABEL       "Callthepolice"
+#define TRIGGER_THRESHOLD   0.70f
+#define PRINT_MIN           0.10f   // print result lines when keyword prob is at least this
+#define STATUS_EVERY_MS     10000
+#define VOICE_COOLDOWN_MS   5000
+#define LED_HOLD_MS         3000
+#define BEEP_FREQ           2500
+#define SLOT                I2S_STD_SLOT_RIGHT
 
 // ------------------------------------------------------------------------------
 // 2. BLE GATT UUIDS (Matches Flutter App Constants)
 // ------------------------------------------------------------------------------
 #define BLE_DEVICE_NAME   "SafeGuard"
 #define SERVICE_UUID      "0000ffe0-0000-1000-8000-00805f9b34fb"
-#define CHAR_ALERT_UUID   "0000ffe1-0000-1000-8000-00805f9b34fb" // Notify app when SOS pressed
-#define CHAR_CONFIG_UUID  "0000ffe2-0000-1000-8000-00805f9b34fb" // App writes updated contacts/URL/location/commands
+#define CHAR_ALERT_UUID   "0000ffe1-0000-1000-8000-00805f9b34fb" // Notify app when SOS triggered
+#define CHAR_CONFIG_UUID  "0000ffe2-0000-1000-8000-00805f9b34fb" // App writes commands/config
 #define CHAR_STATUS_UUID  "0000ffe3-0000-1000-8000-00805f9b34fb" // Live status readout for app
 
 // ------------------------------------------------------------------------------
@@ -84,6 +88,7 @@ HardwareSerial gpsSerial(0);   // NEO-6M on UART0 (USB CDC carries Serial consol
 TinyGsm modem(SerialAT);
 TinyGPSPlus gps;
 Preferences prefs;
+I2SClass i2s;
 
 BLEServer *pServer = nullptr;
 BLECharacteristic *pAlertChar = nullptr;
@@ -92,7 +97,7 @@ BLECharacteristic *pStatusChar = nullptr;
 bool bleClientConnected = false;
 
 // ------------------------------------------------------------------------------
-// 4. DYNAMIC CONFIGURATION (Loaded from NVS Flash — No Hardcoding)
+// 4. DYNAMIC CONFIGURATION (Loaded from NVS Flash)
 // ------------------------------------------------------------------------------
 String linkedUserId    = "7426cae6-d358-4a02-9e2f-c7839a864e93";
 String linkedUserEmail = "chepchumbajr@gmail.com";
@@ -104,10 +109,9 @@ String contact2Name    = "";
 String contact3        = "";
 String contact3Name    = "";
 
-// Parental Control & Mode State
 String ownerMode       = "adult";  // "adult" or "child"
 bool touchSosEnabled   = true;     // True in adult mode, false in child mode
-unsigned long holdPanicMs = 1500UL; // Configurable 1000-10000ms via app slider
+unsigned long holdPanicMs = 1500UL;
 String guardianPhone   = "+254740034499";
 String guardianPin     = "1234";
 
@@ -122,45 +126,35 @@ volatile bool pendingChildCallParent = false;
 String pendingCallTarget = "";
 unsigned long findLedEndMs = 0;
 bool sosBeaconActive = false;
-unsigned long sosBeaconStartMs = 0;
 
-String supabaseUrl     = "https://afagwdhpjnnbueiyjmde.supabase.co";
-String supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmYWd3ZGhwam5uYnVlaXlqbWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5MTkzMzUsImV4cCI6MjEwNTQ5NTMzNX0.Qw_rs_KJOZF8RkXWW62QBKnSafzJFkt9YBPqCRo9mlA";
-String backendUrl      = "https://unpaved-coherent-encroach.ngrok-free.dev";
-
-// Permanent 3D Mapbox Live Viewer (Zero ngrok dependency via GitHub Pages CDN!)
+// Permanent 3D Mapbox Live Viewer (Alina Harbour Apartments)
 String trackViewerUrl  = "https://joychepchumba.github.io/gps-safety-wearable/track.html";
-
-String wifiSsid        = "The Kipkemboi's";
-String wifiPass        = "Ng'0mbe_h@y$.";
-const char simPin[]    = ""; // Leave empty if SIM has no PIN
-
+const char simPin[]    = "";
 String deviceMacAddress = "";
-String deviceUUID       = "";
 
 // ------------------------------------------------------------------------------
 // 5. TIMING, THRESHOLDS & LOCATION STATE
 // ------------------------------------------------------------------------------
-const unsigned long FIX_WAIT_MS      = 6000UL;   // GPS outdoor check window before fallback (indoor-optimized)
-const unsigned long BOOT_GUARD_MS    = 4000UL;   // Ignore touch during first 4s after boot/flash while TTP223 calibrates
-const unsigned long DEBOUNCE_MS      = 60UL;     // Touch debounce (filters wire bounce & EMI)
-const unsigned long MIN_TAP_MS       = 80UL;     // Taps shorter than 80ms are rejected as electrical/wire noise
+const unsigned long FIX_WAIT_MS      = 3000UL;   // Brief outdoor GPS check before Alina Harbour indoor fallback
+const unsigned long BOOT_GUARD_MS    = 2000UL;   // Ignore touch during first 2s after boot while TTP223 settles
+const unsigned long DEBOUNCE_MS      = 50UL;     // Touch debounce
+const unsigned long MIN_TAP_MS       = 60UL;     // Reject brief electrical noise
 const unsigned long MAX_TAP_MS       = 900UL;    // Taps longer than 900ms are treated as holds
 const unsigned long CHILD_CALL_HOLD_MS = 3000UL; // In Child Mode, holding 3s calls parent
 const unsigned long DOUBLE_GAP_MS    = 1200UL;   // Max time between tap 1 and tap 2
-const unsigned long COOLDOWN_MS      = 25000UL;  // Minimum time between triggered alerts
-const unsigned long HEARTBEAT_INT_MS = 60000UL;  // Periodic DB heartbeat interval (60s)
+const unsigned long COOLDOWN_MS      = 10000UL;  // Minimum time between triggered alerts
 
 // Location state in RAM & Flash (Alina Harbour Apartments, Nairobi)
 String lastLat = "-1.2907850038543573";   // Alina Harbour Apartments
 String lastLon = "36.78176897301627";
-String lastCity = "Alina Harbour Apartments";
 String currentLocSource = "Alina Harbour Apartments Anchor";
 unsigned long lastFixMs = 0;
 unsigned long lastBleLocMs = 0;
-unsigned long lastHeartbeatMs = 0;
 
-// Touch Sensor State (GPIO2)
+// Touch Sensor State (GPIO2 & GPIO1)
+bool benchFastMode = false;        // When true ('bench on'), triggers BLE + LED alarm immediately without 25s SMS/Call delay
+bool voicePausedForTouchTest = false; // When true ('voice off'), pauses 559ms voice inference so loop() polls touch at 1000 Hz
+bool gpio2StuckHighAtBoot = false; // If GPIO2 is pulled HIGH at boot (e.g. speaker/strapping), use GPIO1 only until GPIO2 drops LOW
 bool touchStable = false;
 bool touchRaw = false;
 unsigned long rawChangedMs = 0;
@@ -169,15 +163,30 @@ unsigned long lastTapTime = 0;
 int tapCount = 0;
 unsigned long lastTriggerMs = 0;
 bool triggerPending = false;
-
-// Voice & Microphone Detection State (GPIO10)
-bool micHardwareDetected = false;
-int micNoiseFloor = 1800;
-#define MIC_SHOUT_THRESHOLD 2800 // Peak ADC reading triggering acoustic distress
-unsigned long lastMicSampleMs = 0;
 String currentTriggerReason = "pendant_touch";
 
+static inline void logTestEvent(const char *evt) {
+#if TEST_MODE
+  Serial.printf("[TEST_EVENT] millis=%lu event=%s\n", millis(), evt);
+#endif
+}
+
+// ---- Lindana v7 Continuous I2S State ----
+static const size_t SLICE = EI_CLASSIFIER_SLICE_SIZE;
+static size_t RING        = 16000; // Dynamically sized in setupVoiceI2S() based on free heap after BLE init
+static int16_t *ring = nullptr;
+static int16_t *snap = nullptr;
+static volatile size_t head = 0;
+static volatile uint32_t total_samples = 0;
+static volatile int32_t mic_peak = 0;
+static uint32_t consumed = 0;
+static size_t rpos = 0;
+static int warmup = EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW;
+static uint32_t led_off_at = 0;
+bool i2sVoiceReady = false;
+
 // Forward declarations
+void updateTouch();
 void sendStatusJsonOverBLE();
 void sendLocationJsonOverBLE();
 void updateBleSosBeacon(bool enable);
@@ -190,6 +199,58 @@ void blinkLed(int times, int onMs = 60, int offMs = 60) {
     delay(onMs);
     digitalWrite(PIN_STATUS_LED, LOW);
     if (i < times - 1) delay(offMs);
+  }
+}
+
+static void reset_audio_stream() {
+  if (!i2sVoiceReady) return;
+  consumed = total_samples;
+  rpos = head;
+  run_classifier_init();
+  warmup = EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW;
+}
+
+// Exact Lindana v7 alert_beep(): three short signals (beeps or LED blinks), then throw away audio recorded meanwhile
+static void alert_beep() {
+  for (int i = 0; i < 3; i++) {
+#if USE_SPEAKER
+    ledcWriteTone(PIN_SPK, BEEP_FREQ);
+    delay(180);
+    ledcWriteTone(PIN_SPK, 0);
+    delay(120);
+#else
+    digitalWrite(PIN_LED, LED_ON_LEVEL);
+    delay(180);
+    digitalWrite(PIN_LED, !LED_ON_LEVEL);
+    delay(120);
+#endif
+  }
+  digitalWrite(PIN_LED, LED_ON_LEVEL);   // stay lit until the hold time ends
+  reset_audio_stream();
+}
+
+static int get_audio_data(size_t offset, size_t length, float *out_ptr) {
+  return numpy::int16_to_float(&snap[offset], out_ptr, length);
+}
+
+static void capture_task(void *arg) {
+  static int32_t raw[256];
+  size_t h = 0;
+  while (true) {
+    size_t n = i2s.readBytes((char *)raw, sizeof(raw)) / 4;
+    for (size_t i = 0; i < n; i++) {
+      int32_t a24 = raw[i] >> 8;
+      if (a24 < 0) a24 = -a24;
+      if (a24 > mic_peak) mic_peak = a24;
+      int32_t s = raw[i] >> GAIN_SHIFT;
+      if (s > 32767) s = 32767;
+      if (s < -32768) s = -32768;
+      ring[h] = (int16_t)s;
+      if (++h == RING) h = 0;
+      head = h;
+    }
+    total_samples += n;
+    vTaskDelay(1);
   }
 }
 
@@ -222,18 +283,9 @@ void loadSettingsFromFlash() {
   if (holdPanicMs < 1000UL || holdPanicMs > 10000UL) holdPanicMs = 1500UL;
   guardianPhone   = prefs.getString("guard_phone", contact1);
   guardianPin     = prefs.getString("guard_pin", "1234");
-
-  supabaseUrl     = prefs.getString("sb_url", supabaseUrl);
-  supabaseAnonKey = prefs.getString("sb_key", supabaseAnonKey);
-  backendUrl      = prefs.getString("back_url", backendUrl);
   trackViewerUrl  = prefs.getString("track_url", trackViewerUrl);
 
-  wifiSsid = prefs.getString("wifi_ssid", wifiSsid);
-  wifiPass = prefs.getString("wifi_pass", wifiPass);
-
-  deviceUUID = prefs.getString("dev_uuid", "");
-
-  // Load saved indoor anchor coordinates (Migrate old default to Alina Harbour Apartments)
+  // Load saved indoor anchor coordinates (Alina Harbour Apartments)
   lastLat = prefs.getString("last_lat", "-1.2907850038543573");
   lastLon = prefs.getString("last_lon", "36.78176897301627");
   if (lastLat == "-1.309250" || lastLat == "-1.292100" || lastLat == "-1.307300" || lastLat.length() == 0) {
@@ -244,18 +296,12 @@ void loadSettingsFromFlash() {
     prefs.putString("last_lon", lastLon);
   }
 
-  // Persist defaults if running for the first time
   prefs.putString("user_id", linkedUserId);
   prefs.putString("user_email", linkedUserEmail);
   prefs.putString("c1", contact1);
   prefs.putString("c1_name", contact1Name);
-  prefs.putString("c2", contact2);
-  prefs.putString("c2_name", contact2Name);
-  prefs.putString("sb_url", supabaseUrl);
-  prefs.putString("sb_key", supabaseAnonKey);
   prefs.putString("last_lat", lastLat);
   prefs.putString("last_lon", lastLon);
-
   prefs.end();
 
   Serial.println(F("[NVS] Configuration loaded from Flash memory:"));
@@ -263,10 +309,8 @@ void loadSettingsFromFlash() {
   Serial.printf("  Wearer Mode:  %s (Touch SOS: %s, Hold: %lu ms)\n",
                 ownerMode.c_str(), touchSosEnabled ? "ENABLED" : "DISABLED (Child Lock)", holdPanicMs);
   Serial.printf("  Contact 1:    %s (%s)\n", contact1.c_str(), contact1Name.c_str());
-  Serial.printf("  Contact 2:    %s (%s)\n", contact2.c_str(), contact2Name.c_str());
-  Serial.printf("  Indoor Anchor:%s, %s (Alina Harbour Apartments)\n", lastLat.c_str(), lastLon.c_str());
+  Serial.printf("  Anchor:%s, %s (Alina Harbour Apartments)\n", lastLat.c_str(), lastLon.c_str());
   Serial.printf("  3D Mapbox:    %s?lat=%s&lng=%s\n", trackViewerUrl.c_str(), lastLat.c_str(), lastLon.c_str());
-  Serial.printf("  Supabase:     %s\n", supabaseUrl.c_str());
 }
 
 void saveContactsToFlash() {
@@ -285,49 +329,18 @@ void saveIndoorAnchor(const String &lat, const String &lon) {
   lastLat = lat;
   lastLon = lon;
   lastFixMs = millis();
-  currentLocSource = "Manual Indoor Calibration Anchor";
+  currentLocSource = " Calibration Anchor";
   prefs.begin("safeguard", false);
   prefs.putString("last_lat", lastLat);
   prefs.putString("last_lon", lastLon);
   prefs.end();
-  Serial.printf("[INDOOR ANCHOR] Saved new indoor coordinates to Flash: %s, %s\n",
+  Serial.printf("[ ANCHOR] Saved coordinates to Flash: %s, %s\n",
                 lastLat.c_str(), lastLon.c_str());
 }
 
 // ------------------------------------------------------------------------------
-// 7. MULTI-TIER LOCATION ENGINE (INDOOR & OUTDOOR)
+// 7. MULTI-TIER LOCATION ENGINE (INDOOR ALINA HARBOUR & OUTDOOR NEO-6M GPS)
 // ------------------------------------------------------------------------------
-
-// Helper: Lightweight JSON string value extractor (Zero external library dependency)
-String jsonExtract(const String &json, const String &key, int startPos = 0, int *outEnd = nullptr) {
-  String searchKey = "\"" + key + "\":\"";
-  int kPos = json.indexOf(searchKey, startPos);
-  if (kPos != -1) {
-    int vStart = kPos + searchKey.length();
-    int vEnd = json.indexOf("\"", vStart);
-    if (vEnd != -1) {
-      if (outEnd) *outEnd = vEnd;
-      return json.substring(vStart, vEnd);
-    }
-  }
-  // Try without quotes for numbers/booleans
-  searchKey = "\"" + key + "\":";
-  kPos = json.indexOf(searchKey, startPos);
-  if (kPos != -1) {
-    int vStart = kPos + searchKey.length();
-    while (vStart < json.length() && (json[vStart] == ' ' || json[vStart] == '\"')) vStart++;
-    int vEnd = vStart;
-    while (vEnd < json.length() && json[vEnd] != ',' && json[vEnd] != '}' && json[vEnd] != ']') vEnd++;
-    String val = json.substring(vStart, vEnd);
-    val.replace("\"", "");
-    val.trim();
-    if (outEnd) *outEnd = vEnd;
-    return val;
-  }
-  return "";
-}
-
-// Tier 1: Satellite GPS stream ingestion
 void feedGPS() {
   while (gpsSerial.available()) {
     gps.encode(gpsSerial.read());
@@ -340,109 +353,12 @@ void feedGPS() {
   }
 }
 
-// Tier 3: Indoor Wi-Fi IP Geolocation (Zero API key, runs in ~0.5s over HTTP)
-bool fetchWifiGeolocation(String &lat, String &lon, String &city) {
-  if (WiFi.status() != WL_CONNECTED) return false;
-
-  Serial.println(F("[WIFI GEO] Querying indoor Wi-Fi geolocation..."));
-  HTTPClient http;
-  http.begin("http://ip-api.com/json/?fields=status,lat,lon,city,country");
-  http.setTimeout(4000);
-  int httpCode = http.GET();
-
-  if (httpCode == 200) {
-    String payload = http.getString();
-    http.end();
-
-    String status = jsonExtract(payload, "status");
-    if (status == "success") {
-      lat = jsonExtract(payload, "lat");
-      lon = jsonExtract(payload, "lon");
-      city = jsonExtract(payload, "city");
-
-      if (lat.length() > 0 && lon.length() > 0) {
-        lastLat = lat;
-        lastLon = lon;
-        lastCity = city;
-        lastFixMs = millis();
-        currentLocSource = "Wi-Fi Indoor Geolocation (" + city + ")";
-
-        // Persist to Flash so offline fallback has current city/building coordinates
-        prefs.begin("safeguard", false);
-        prefs.putString("last_lat", lastLat);
-        prefs.putString("last_lon", lastLon);
-        prefs.end();
-
-        Serial.printf("[WIFI GEO] SUCCESS! Coordinates: %s, %s (%s)\n",
-                      lat.c_str(), lon.c_str(), city.c_str());
-        return true;
-      }
-    }
-  } else {
-    http.end();
-    Serial.printf("[WIFI GEO] Notice: HTTP %d\n", httpCode);
-  }
-  return false;
-}
-
-// Tier 4: Cellular Base-Station Location (SIM800L LBS / Cell-ID triangulation)
-bool fetchGsmCellLocation(String &lat, String &lon) {
-  if (!modem.isNetworkConnected()) return false;
-
-  Serial.println(F("[GSM LBS] Requesting cellular base-station coordinates from SIM800L..."));
-  while (SerialAT.available()) SerialAT.read();
-  modem.sendAT(GF("+CIPGSMLOC=1,1"));
-  String resp = "";
-  unsigned long start = millis();
-  while (millis() - start < 3500) {
-    while (SerialAT.available()) {
-      resp += (char)SerialAT.read();
-    }
-    if ((resp.indexOf("+CIPGSMLOC:") != -1 && resp.indexOf("OK") != -1) ||
-        resp.indexOf("ERROR") != -1) {
-      break;
-    }
-    delay(10);
-  }
-  // Drain any trailing bytes so subsequent SMS AT commands start with a clean UART
-  delay(80);
-  while (SerialAT.available()) SerialAT.read();
-
-  int idx = resp.indexOf("+CIPGSMLOC:");
-  if (idx != -1) {
-    int c1 = resp.indexOf(',', idx);
-    int c2 = resp.indexOf(',', c1 + 1);
-    int c3 = resp.indexOf(',', c2 + 1);
-    if (c1 != -1 && c2 != -1 && c3 != -1) {
-      String status = resp.substring(idx + 12, c1);
-      status.trim();
-      if (status == "0") {
-        lon = resp.substring(c1 + 1, c2);
-        lat = resp.substring(c2 + 1, c3);
-        lon.trim();
-        lat.trim();
-        if (lat.length() > 0 && lon.length() > 0) {
-          lastLat = lat;
-          lastLon = lon;
-          lastFixMs = millis();
-          currentLocSource = "GSM Cell Tower Triangulation";
-          Serial.printf("[GSM LBS] SUCCESS! Cellular tower coords: %s, %s\n", lat.c_str(), lon.c_str());
-          return true;
-        }
-      }
-    }
-  }
-  return false;
-}
-
-// Master Multi-Tier Location Resolver:
-// Attempts GPS -> Phone BLE Assisted -> Wi-Fi Geolocation -> GSM Cell Tower -> Saved Anchor
 bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
   Serial.println(F("\n[LOCATION ENGINE] Resolving current location..."));
 
-  // 1. TIER 1: Check NEO-6M satellite fix (Brief check up to 5s)
+  // 1. TIER 1: Check NEO-6M satellite fix (Brief check up to 2.5s)
   unsigned long start = millis();
-  unsigned long checkTime = min(timeoutMs, 5000UL);
+  unsigned long checkTime = min(timeoutMs, 2500UL);
   while (millis() - start < checkTime) {
     feedGPS();
     if (lastFixMs != 0 && (millis() - lastFixMs < 3000) && gps.location.isValid() && gps.satellites.value() >= 3) {
@@ -459,32 +375,21 @@ bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
   if (lastBleLocMs != 0 && (millis() - lastBleLocMs < 600000UL)) {
     lat = lastLat;
     lon = lastLon;
-    currentLocSource = "Phone BLE Assisted GPS (Indoor)";
+    currentLocSource = "Phone BLE Assisted GPS ";
     Serial.printf("[LOCATION] Using Phone Assisted GPS over BLE: %s, %s\n", lat.c_str(), lon.c_str());
     return true;
   }
 
-  // 3. TIER 3: Check Wi-Fi Geolocation (Fast & accurate for indoor testing!)
-  if (WiFi.status() == WL_CONNECTED) {
-    String city;
-    if (fetchWifiGeolocation(lat, lon, city)) {
-      currentLocSource = "Wi-Fi Geolocation (Indoor - " + city + ")";
-      return true;
-    }
-  }
-
-  // 4. TIER 4: Fallback to Saved Indoor Anchor in Flash
-  // (Avoids running AT+CIPGSMLOC=1,1 right before emergency SMS so SIM800L radio & power stay 100% ready for SMS)
+  // 3. TIER 3: Fallback to Saved Indoor Anchor in Flash (Alina Harbour Apartments)
   if (lastLat.length() > 0 && lastLon.length() > 0) {
     lat = lastLat;
     lon = lastLon;
     currentLocSource = "Alina Harbour Apartments Anchor (Flash)";
-    Serial.printf("[LOCATION] Using Saved Indoor Calibration Anchor: %s, %s\n", lat.c_str(), lon.c_str());
+    Serial.printf("[LOCATION] Using Saved Calibration Anchor: %s, %s\n", lat.c_str(), lon.c_str());
     Serial.printf("[LOCATION] 3D Mapbox Live Link: %s?lat=%s&lng=%s\n", trackViewerUrl.c_str(), lat.c_str(), lon.c_str());
     return true;
   }
 
-  // Final fallback (Alina Harbour Apartments)
   lat = "-1.2907850038543573";
   lon = "36.78176897301627";
   currentLocSource = "Alina Harbour Apartments Anchor";
@@ -492,215 +397,26 @@ bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
 }
 
 void showLocation() {
-  Serial.println(F("\nResolving current location (Indoor / Outdoor)..."));
+  Serial.println(F("\nResolving current location ..."));
   String lat, lon;
-  getFix(lat, lon, 4000UL);
+  getFix(lat, lon, 2000UL);
   Serial.printf("Current Location: Lat=%s, Lon=%s (Alina Harbour Apartments)\n", lat.c_str(), lon.c_str());
   Serial.printf("Source:           %s\n", currentLocSource.c_str());
   Serial.printf("GPS Satellites:   %d\n", gps.satellites.isValid() ? gps.satellites.value() : 0);
   Serial.printf("3D Mapbox Link:   %s?lat=%s&lng=%s\n\n", trackViewerUrl.c_str(), lat.c_str(), lon.c_str());
   blinkLed(3, 70, 70);
+  reset_audio_stream();
 }
 
 // ------------------------------------------------------------------------------
-// 8. SUPABASE DIRECT REST API CLIENT
-// ------------------------------------------------------------------------------
-
-// 8.1 Sync emergency contacts from Supabase `emergency_contacts` table
-bool syncContactsFromSupabase() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("[DB SYNC] WiFi not connected. Cannot reach Supabase directly."));
-    return false;
-  }
-
-  Serial.println(F("\n[DB SYNC] Querying Supabase for user emergency contacts..."));
-  Serial.printf("  User ID: %s (%s)\n", linkedUserId.c_str(), linkedUserEmail.c_str());
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  String endpoint = supabaseUrl + "/rest/v1/emergency_contacts?user_id=eq." + linkedUserId +
-                    "&select=id,contact_name,phone_number,consent_status&order=created_at.asc";
-
-  http.begin(client, endpoint);
-  http.addHeader("apikey", supabaseAnonKey);
-  http.addHeader("Authorization", "Bearer " + supabaseAnonKey);
-  http.addHeader("Accept", "application/json");
-
-  int httpCode = http.GET();
-  String payload = http.getString();
-  http.end();
-
-  Serial.printf("[DB SYNC] Supabase response code: %d\n", httpCode);
-
-  if (httpCode >= 200 && httpCode < 300) {
-    if (payload == "[]" || payload.length() < 10) {
-      Serial.println(F("[DB SYNC] No contacts in database for this user yet. Keeping existing local contacts."));
-      return false;
-    }
-
-    int foundCount = 0;
-    int curPos = 0;
-    while (curPos < payload.length() && foundCount < 3) {
-      int objStart = payload.indexOf('{', curPos);
-      if (objStart == -1) break;
-      int objEnd = payload.indexOf('}', objStart);
-      if (objEnd == -1) break;
-
-      String objStr = payload.substring(objStart, objEnd + 1);
-      String phone = jsonExtract(objStr, "phone_number");
-      String name  = jsonExtract(objStr, "contact_name");
-
-      if (phone.length() >= 7) {
-        if (phone.indexOf("709570000") != -1 || name.indexOf("Police") != -1) {
-          Serial.printf("  [HELPLINE] %s (%s) registered in database. SIM800L auto-SMS bypassed for testing safety.\n",
-                        phone.c_str(), name.c_str());
-          curPos = objEnd + 1;
-          continue;
-        }
-
-        foundCount++;
-        if (foundCount == 1) {
-          contact1 = phone;
-          contact1Name = name.length() > 0 ? name : "Contact 1";
-        } else if (foundCount == 2) {
-          contact2 = phone;
-          contact2Name = name.length() > 0 ? name : "Contact 2";
-        } else if (foundCount == 3) {
-          contact3 = phone;
-          contact3Name = name.length() > 0 ? name : "Contact 3";
-        }
-      }
-      curPos = objEnd + 1;
-    }
-
-    if (foundCount > 0) {
-      Serial.printf("[DB SYNC] SUCCESS! Synced %d contacts from Supabase:\n", foundCount);
-      Serial.printf("  1. %s (%s)\n", contact1.c_str(), contact1Name.c_str());
-      if (contact2.length() > 0) Serial.printf("  2. %s (%s)\n", contact2.c_str(), contact2Name.c_str());
-      if (contact3.length() > 0) Serial.printf("  3. %s (%s)\n", contact3.c_str(), contact3Name.c_str());
-
-      saveContactsToFlash();
-      blinkLed(3, 70, 70);
-      return true;
-    }
-  } else {
-    Serial.printf("[DB SYNC] Supabase query notice (HTTP %d). Keeping local contacts.\n", httpCode);
-  }
-  return false;
-}
-
-// 8.2 Register wearable & send heartbeat to Supabase `wearable_devices` table
-bool registerWearableInDatabase() {
-  if (WiFi.status() != WL_CONNECTED) return false;
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  String endpoint = supabaseUrl + "/rest/v1/wearable_devices?on_conflict=device_mac";
-
-  http.begin(client, endpoint);
-  http.addHeader("apikey", supabaseAnonKey);
-  http.addHeader("Authorization", "Bearer " + supabaseAnonKey);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Prefer", "resolution=merge-duplicates,return=representation");
-
-  char jsonBody[320];
-  snprintf(jsonBody, sizeof(jsonBody),
-           "{\"user_id\":\"%s\",\"device_mac\":\"%s\",\"device_name\":\"%s\","
-           "\"firmware_version\":\"2.2.0\",\"is_active\":true,\"last_seen_at\":\"now()\"}",
-           linkedUserId.c_str(), deviceMacAddress.c_str(), BLE_DEVICE_NAME);
-
-  int httpCode = http.POST(jsonBody);
-  String resp = http.getString();
-  http.end();
-
-  if (httpCode >= 200 && httpCode < 300) {
-    lastHeartbeatMs = millis();
-    String devId = jsonExtract(resp, "id");
-    if (devId.length() > 0) {
-      deviceUUID = devId;
-      prefs.begin("safeguard", false);
-      prefs.putString("dev_uuid", deviceUUID);
-      prefs.end();
-    }
-    Serial.printf("[HEARTBEAT] Wearable status updated in Supabase! (MAC: %s, Active now)\n",
-                  deviceMacAddress.c_str());
-    return true;
-  }
-  return false;
-}
-
-// 8.3 Log alert & SMS to Supabase `panic_events` table
-bool logAlertToSupabase(const String &lat, const String &lon, const String &smsText, const String &recipients, const String &source) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println(F("[SUPABASE LOG] Offline cellular mode. SMS delivered directly via GSM."));
-    return false;
-  }
-
-  if (deviceUUID.length() == 0) {
-    registerWearableInDatabase();
-  }
-
-  Serial.println(F("[SUPABASE LOG] Recording SOS & SMS event in Supabase panic_events table..."));
-
-  WiFiClientSecure client;
-  client.setInsecure();
-
-  HTTPClient http;
-  String endpoint = supabaseUrl + "/rest/v1/panic_events";
-
-  http.begin(client, endpoint);
-  http.addHeader("apikey", supabaseAnonKey);
-  http.addHeader("Authorization", "Bearer " + supabaseAnonKey);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Prefer", "return=minimal");
-
-  String safeNotes = "SMS sent via SIM800L to [" + recipients + "]. Source: " + source + ". Msg: " + smsText;
-  safeNotes.replace("\"", "'");
-  safeNotes.replace("\n", " ");
-
-  String dbMethod = (currentTriggerReason == "pendant_voice") ? "pendant_voice" : "pendant_touch";
-
-  String payload = "{";
-  payload += "\"user_id\":\"" + linkedUserId + "\",";
-  if (deviceUUID.length() > 0) {
-    payload += "\"wearable_device_id\":\"" + deviceUUID + "\",";
-  }
-  payload += "\"trigger_method\":\"" + dbMethod + "\",";
-  payload += "\"status\":\"active\",";
-  payload += "\"latitude\":" + lat + ",";
-  payload += "\"longitude\":" + lon + ",";
-  payload += "\"location_accuracy_m\":15.0,";
-  payload += "\"emergency_contacts_notified\":true,";
-  payload += "\"notes\":\"" + safeNotes + "\"";
-  payload += "}";
-
-  int httpCode = http.POST(payload);
-  http.end();
-
-  if (httpCode >= 200 && httpCode < 300) {
-    Serial.printf("[SUPABASE LOG] SUCCESS! Alert recorded in Supabase (HTTP %d)\n", httpCode);
-    return true;
-  } else {
-    Serial.printf("[SUPABASE LOG] Notice: HTTP %d while inserting panic event.\n", httpCode);
-    return false;
-  }
-}
-
-// ------------------------------------------------------------------------------
-// 9. SMS & CELLULAR GSM DISPATCH (SIM800L)
+// 8. SMS & CELLULAR GSM DISPATCH (SIM800L)
 // ------------------------------------------------------------------------------
 void prepareModemFor2GBurst() {
   digitalWrite(PIN_STATUS_LED, LOW);
-  delay(200); // Decoupling capacitor settle
+  delay(200);
 
-  // Drain any residual bytes in UART buffer
   while (SerialAT.available()) SerialAT.read();
 
-  // Configure SIM800L text mode & standard GSM charset
   modem.sendAT(GF("E0"));
   modem.waitResponse(500);
   modem.sendAT(GF("+CMGF=1"));
@@ -708,10 +424,9 @@ void prepareModemFor2GBurst() {
   modem.sendAT(GF("+CSCS=\"GSM\""));
   modem.waitResponse(500);
 
-  // Verify SIM800L is registered on Safaricom before transmitting
   if (!modem.isNetworkConnected()) {
     Serial.println(F("[GSM] Verifying cellular network registration..."));
-    if (modem.waitForNetwork(30000L, true)) {
+    if (modem.waitForNetwork(20000L, true)) {
       Serial.printf("[GSM] Registered on: %s (Signal: %d/31)\n",
                     modem.getOperator().c_str(), modem.getSignalQuality());
     }
@@ -719,53 +434,51 @@ void prepareModemFor2GBurst() {
   while (SerialAT.available()) SerialAT.read();
 }
 
-void resumeBleAfter2GBurst() {
-  // BLE advertising runs continuously
-}
-
 bool sendSMS(const String &number, const String &text) {
   if (number.length() < 7) return false;
 
-  // SAFETY GUARD: Never transmit live cellular SMS to official emergency helpline during testing
   if (number.indexOf("709570000") != -1 || number.indexOf("999") != -1 || number.indexOf("112") != -1) {
     Serial.printf("[SAFETY GUARD] Bypassed cellular SMS to official helpline (%s) during breadboard testing.\n", number.c_str());
-    return true; // Marked as safely handled
+    return true;
   }
 
   Serial.printf("[SMS] Sending to %s (%u chars)...\n", number.c_str(), text.length());
 
   prepareModemFor2GBurst();
 
-  // Dispatch SMS via TinyGSM (exact proven method from gsm_test_esp.ino)
   bool ok = modem.sendSMS(number, text);
   if (!ok) {
     Serial.println(F("[SMS] First attempt did not confirm; stabilizing power rail & retrying..."));
-    delay(3500);
+    delay(3000);
     prepareModemFor2GBurst();
     ok = modem.sendSMS(number, text);
   }
   Serial.println(ok ? F("[SMS] Delivery SUCCESSFUL!") : F("[SMS] Send FAILED!"));
 
-  // Wait 2.5s for SIM800L to exit text mode, finalize 2G transmission, and drain
-  delay(2500);
+  delay(2000);
   while (SerialAT.available()) SerialAT.read();
-
-  resumeBleAfter2GBurst();
+  reset_audio_stream();
   return ok;
 }
 
 void notifyPhoneOverBLE(uint8_t alertCode = 0x01) {
+  sosBeaconActive = (alertCode != 0x00);
   if (pAlertChar != nullptr) {
     pAlertChar->setValue(&alertCode, 1);
     pAlertChar->notify();
-    Serial.printf("[BLE] Alert notification (0x%02X) sent to connected phone!\n", alertCode);
+    logTestEvent("BLE_ALERT_GATT_NOTIFY");
+    Serial.printf("[ESP32 -> APP BLE] Alert notification (0x%02X) sent to connected phone!\n", alertCode);
+  }
+  sendStatusJsonOverBLE();
+  updateBleSosBeacon(alertCode != 0x00);
+  if (alertCode != 0x00) {
+    logTestEvent("BLE_SL_BEACON_ACTIVE");
   }
 }
 
-// Main emergency dispatch routine: Resolves location (Multi-Tier), sends SMS, logs to Supabase
+// Main emergency dispatch routine: Triggers Alarm, notifies BLE, resolves Alina Harbour / GPS, sends SMS, & places Voice Call
 void sendLocationAlert(unsigned long waitMs = FIX_WAIT_MS) {
-  blinkLed(5, 40, 40); // Rapid strobe indicator
-  digitalWrite(PIN_STATUS_LED, LOW);
+  alert_beep(); // Audible + visual alarm (exact Lindana v7 3x blink/beep)
   Serial.println(F("\n=================================================="));
   Serial.println(F(">>> EMERGENCY SOS TRIGGERED FROM PENDANT <<<"));
   Serial.println(F("=================================================="));
@@ -774,56 +487,45 @@ void sendLocationAlert(unsigned long waitMs = FIX_WAIT_MS) {
   if (currentTriggerReason == "pendant_voice") alertCode = 0x02;
   else if (currentTriggerReason == "remote_guardian") alertCode = 0x03;
 
-  // 1. Notify paired smartphone over BLE immediately
+  // 1. Notify paired smartphone over BLE immediately + start 'SL' BLE SOS Beacon
   notifyPhoneOverBLE(alertCode);
 
-  // 2. Resolve Multi-Tier Location (GPS -> Phone BLE -> Wi-Fi Geo -> Anchor)
+  // 2. Resolve Multi-Tier Location (GPS -> Phone BLE -> Alina Harbour Apartments Anchor)
   String lat, lon;
   getFix(lat, lon, waitMs);
+  sendLocationJsonOverBLE();
 
-  // Format coordinates to 6 decimal places (~11cm precision) for compact, corruption-free GSM SMS URL
   String smsLat = String(lat.toDouble(), 6);
   String smsLon = String(lon.toDouble(), 6);
-
-  // Secure 3D Mapbox Live Tracking link with Alina Harbour Apartments coordinates
   String mapboxLiveLink = trackViewerUrl + "?lat=" + smsLat + "&lng=" + smsLon;
 
   Serial.printf("[SOS LOCATION] Coordinates: %s, %s (Alina Harbour Apartments)\n", lat.c_str(), lon.c_str());
   Serial.printf("[SOS LOCATION] 3D Mapbox:   %s\n", mapboxLiveLink.c_str());
 
-  // Pure GSM 7-bit single-line message (matches gsm_test_esp.ino format: no parentheses or newlines)
   String smsMsg = "ALERT. Joy 3D Live Map: " + mapboxLiveLink;
 
-  // 3. Dispatch SMS individually FIRST while SIM800L has full power rail capacity
-  String recipients = "";
+  // 3. Dispatch SMS to Emergency Contacts
   if (contact1.length() >= 7) {
     sendSMS(contact1, smsMsg);
-    recipients += contact1;
   }
   if (contact2.length() >= 7 && contact2 != contact1) {
     delay(2000);
     sendSMS(contact2, smsMsg);
-    if (recipients.length() > 0) recipients += ", ";
-    recipients += contact2;
   }
   if (contact3.length() >= 7 && contact3 != contact1 && contact3 != contact2) {
     delay(2000);
     sendSMS(contact3, smsMsg);
-    if (recipients.length() > 0) recipients += ", ";
-    recipients += contact3;
   }
 
-  // 4. Activate BLE SOS Distress Beacon ('SL' 0xFFFF) for nearby Community Responders
-  // (Voice call is reserved for manual 'c' console command or dedicated voice-call model trigger)
-  updateBleSosBeacon(true);
+  // 4. Place Emergency Voice Call to Primary Contact
+  if (contact1.length() >= 7) {
+    Serial.println(F("[SOS CALL] Placing emergency voice call to Primary Contact..."));
+    callNumber(contact1);
+  }
 
-  // 5. Log alert and sent SMS to Supabase
-  logAlertToSupabase(lat, lon, smsMsg, recipients, currentLocSource);
-
-  // 6. Update wearable heartbeat in DB
-  registerWearableInDatabase();
-
-  Serial.println(F(">>> EMERGENCY ALERT DISPATCH COMPLETED <<<\n"));
+  led_off_at = millis() + LED_HOLD_MS;
+  reset_audio_stream();
+  Serial.println(F(">>> EMERGENCY ALERT (BLE + ALARM + SMS + CALL) COMPLETED <<<\n"));
 }
 
 void testSMS() {
@@ -860,23 +562,18 @@ void callNumber(const String &target) {
     Serial.println(F("Call ended / Hung up."));
   }
 
-  resumeBleAfter2GBurst();
+  reset_audio_stream();
 }
 
 // ------------------------------------------------------------------------------
-// 10. BLE GATT SERVER CALLBACKS, PARENTAL COMMANDS & SOS BEACON
+// 9. BLE GATT SERVER CALLBACKS, PARENTAL COMMANDS & SOS BEACON
 // ------------------------------------------------------------------------------
 void sendStatusJsonOverBLE() {
   if (pStatusChar == nullptr) return;
-  int mv = modem.getBattVoltage();
-  int batPct = 78;
-  if (mv >= 3300 && mv <= 4300) {
-    batPct = constrain(map(mv, 3300, 4200, 0, 100), 0, 100);
-  }
-  char buf[175];
+  char buf[160];
   snprintf(buf, sizeof(buf),
-           "{\"t\":\"status\",\"mode\":\"%s\",\"touch\":%d,\"hold\":%lu,\"bat\":%d,\"fw\":\"2.2.0\",\"sos\":%d}",
-           ownerMode.c_str(), touchSosEnabled ? 1 : 0, holdPanicMs, batPct, sosBeaconActive ? 1 : 0);
+           "{\"t\":\"status\",\"mode\":\"%s\",\"touch\":%d,\"hold\":%lu,\"fw\":\"2.4.0\",\"sos\":%d}",
+           ownerMode.c_str(), touchSosEnabled ? 1 : 0, holdPanicMs, sosBeaconActive ? 1 : 0);
   pStatusChar->setValue((uint8_t *)buf, strlen(buf));
   pStatusChar->notify();
 }
@@ -893,19 +590,11 @@ void sendLocationJsonOverBLE() {
 
 void updateBleSosBeacon(bool enable) {
   sosBeaconActive = enable;
-  if (enable) {
-    sosBeaconStartMs = millis();
-    sendLocationJsonOverBLE();
-  }
 
-  // Always broadcast BLE SOS beacon (even if paired to the owner's phone)
-  // and split Advertisement Data (<= 31 bytes) from Scan Response Data so
-  // the 17-byte Manufacturer Data is never truncated by the 31-byte BLE limit!
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->stop();
 
   if (enable) {
-    // 15-byte payload prefixed by 2-byte company ID 0xFFFF = 17 bytes total
     uint8_t mfg[17];
     mfg[0] = 0xFF;
     mfg[1] = 0xFF;
@@ -926,13 +615,12 @@ void updateBleSosBeacon(bool enable) {
       mfgStr += (char)mfg[i];
     }
 
-    // Primary Advertisement Packet: Flags (3B) + Mfg Data (19B) = 22 bytes (<= 31B max!)
     BLEAdvertisementData advData;
     advData.setFlags(0x06);
     advData.setManufacturerData(mfgStr);
+    advData.setCompleteServices(BLEUUID(SERVICE_UUID));
     pAdvertising->setAdvertisementData(advData);
 
-    // Scan Response Packet: Device Name ("SafeGuard") so scanners see both name & SOS payload
     BLEAdvertisementData scanRespData;
     scanRespData.setName(BLE_DEVICE_NAME);
     pAdvertising->setScanResponseData(scanRespData);
@@ -940,7 +628,12 @@ void updateBleSosBeacon(bool enable) {
     BLEAdvertisementData advData;
     advData.setFlags(0x06);
     advData.setName(BLE_DEVICE_NAME);
+    advData.setCompleteServices(BLEUUID(SERVICE_UUID));
     pAdvertising->setAdvertisementData(advData);
+
+    BLEAdvertisementData scanRespData;
+    scanRespData.setName(BLE_DEVICE_NAME);
+    pAdvertising->setScanResponseData(scanRespData);
   }
 
   pAdvertising->start();
@@ -950,14 +643,15 @@ void updateBleSosBeacon(bool enable) {
 }
 
 class MyServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *pServer) {
+  void onConnect(BLEServer *pServer) override {
     bleClientConnected = true;
-    blinkLed(2, 100, 100);
-    Serial.println(F("[BLE] Phone App connected to SafeGuard pendant!"));
+    Serial.println(F("\n======================================================="));
+    Serial.println(F(" [BLE CONNECTED] SafeLink Phone App paired to ESP32!"));
+    Serial.println(F("=======================================================\n"));
     pendingStatusCmd = true;
   }
 
-  void onDisconnect(BLEServer *pServer) {
+  void onDisconnect(BLEServer *pServer) override {
     bleClientConnected = false;
     Serial.println(F("[BLE] Phone App disconnected. Resuming advertising..."));
     pServer->startAdvertising();
@@ -965,14 +659,15 @@ class MyServerCallbacks : public BLEServerCallbacks {
 };
 
 class ConfigCharCallbacks : public BLECharacteristicCallbacks {
-  void onWrite(BLECharacteristic *pChar) {
+  void onWrite(BLECharacteristic *pChar) override {
     String value = pChar->getValue().c_str();
     value.trim();
     if (value.length() == 0) return;
 
-    Serial.printf("[BLE CONFIG] Command received: %s\n", value.c_str());
+    Serial.println(F("\n*******************************************************"));
+    Serial.printf(" [APP -> ESP32 BLE] Command received from Phone App: %s\n", value.c_str());
+    Serial.println(F("*******************************************************"));
 
-    // 1. Phone Assisted GPS Location update ("LOC:lat,lon")
     if (value.startsWith("LOC:")) {
       int comma = value.indexOf(',', 4);
       if (comma != -1) {
@@ -982,7 +677,7 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
         lastLon.trim();
         lastBleLocMs = millis();
         lastFixMs = millis();
-        currentLocSource = "Phone BLE Assisted GPS (Indoor)";
+        currentLocSource = "Phone BLE Assisted GPS";
         prefs.begin("safeguard", false);
         prefs.putString("last_lat", lastLat);
         prefs.putString("last_lon", lastLon);
@@ -993,13 +688,11 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 2. Parental / Wearer Mode ("MODE:CHILD" or "MODE:ADULT")
     if (value.startsWith("MODE:")) {
       String m = value.substring(5);
       m.toLowerCase();
       ownerMode = (m == "child") ? "child" : "adult";
-      if (ownerMode == "child") touchSosEnabled = false;
-      else touchSosEnabled = true;
+      touchSosEnabled = (ownerMode != "child");
       prefs.begin("safeguard", false);
       prefs.putString("owner_mode", ownerMode);
       prefs.putBool("touch_sos", touchSosEnabled);
@@ -1010,7 +703,6 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 3. Touch Trigger Toggle ("TOUCH:ON" or "TOUCH:OFF")
     if (value.startsWith("TOUCH:")) {
       String t = value.substring(6);
       t.toUpperCase();
@@ -1023,7 +715,6 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 4. Hold Duration / Touch Sensitivity ("HOLD:<ms>")
     if (value.startsWith("HOLD:")) {
       unsigned long ms = (unsigned long)value.substring(5).toInt();
       if (ms >= 1000UL && ms <= 10000UL) {
@@ -1037,7 +728,6 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 5. Guardian Phone & PIN ("GUARD:<phone>", "PIN:<pin>")
     if (value.startsWith("GUARD:")) {
       guardianPhone = value.substring(6);
       int comma = guardianPhone.indexOf(',');
@@ -1049,6 +739,7 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       Serial.printf("[GUARDIAN] Guardian phone set to: %s\n", guardianPhone.c_str());
       return;
     }
+
     if (value.startsWith("PIN:")) {
       guardianPin = value.substring(4);
       guardianPin.trim();
@@ -1059,14 +750,13 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 6. Remote Commands ("CMD:LOCATE", "CMD:STATUS", "CMD:SOS", "CMD:CANCEL", "CMD:FIND", "CMD:CALL:<num>", "CMD:HANGUP")
     if (value.startsWith("CMD:")) {
       String cmd = value.substring(4);
       if (cmd == "LOCATE") pendingLocateCmd = true;
       else if (cmd == "STATUS") pendingStatusCmd = true;
       else if (cmd == "SOS") pendingRemoteSosCmd = true;
       else if (cmd == "CANCEL") pendingCancelSosCmd = true;
-      else if (cmd == "FIND") pendingFindCmd = true;
+      else if (cmd == "FIND" || cmd == "BLINK" || cmd == "PING" || cmd == "TEST") pendingFindCmd = true;
       else if (cmd == "HANGUP") pendingHangupCmd = true;
       else if (cmd.startsWith("CALL")) {
         int colon = cmd.indexOf(':');
@@ -1075,36 +765,6 @@ class ConfigCharCallbacks : public BLECharacteristicCallbacks {
       return;
     }
 
-    // 7. Dynamic Backend URL sync ("URL:https://...")
-    if (value.startsWith("URL:")) {
-      backendUrl = value.substring(4);
-      prefs.begin("safeguard", false);
-      prefs.putString("back_url", backendUrl);
-      prefs.end();
-      Serial.printf("[CONFIG] Backend URL updated to: %s\n", backendUrl.c_str());
-      return;
-    }
-
-    // 8. Dynamic User ID sync ("USER:uuid,email")
-    if (value.startsWith("USER:")) {
-      String rest = value.substring(5);
-      int cIdx = rest.indexOf(',');
-      if (cIdx != -1) {
-        linkedUserId = rest.substring(0, cIdx);
-        linkedUserEmail = rest.substring(cIdx + 1);
-      } else {
-        linkedUserId = rest;
-      }
-      prefs.begin("safeguard", false);
-      prefs.putString("user_id", linkedUserId);
-      prefs.putString("user_email", linkedUserEmail);
-      prefs.end();
-      Serial.printf("[CONFIG] Linked user updated: %s (%s)\n", linkedUserEmail.c_str(), linkedUserId.c_str());
-      syncContactsFromSupabase();
-      return;
-    }
-
-    // 9. Emergency Contacts CSV sync ("phone1,phone2,phone3")
     int firstComma = value.indexOf(',');
     int secondComma = value.indexOf(',', firstComma + 1);
     if (firstComma != -1) {
@@ -1129,7 +789,6 @@ void setupBLE() {
 
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
-  // 1. Alert characteristic (Notifies Phone App on trigger)
   pAlertChar = pService->createCharacteristic(
       CHAR_ALERT_UUID,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
@@ -1137,19 +796,17 @@ void setupBLE() {
   uint8_t zero = 0x00;
   pAlertChar->setValue(&zero, 1);
 
-  // 2. Config characteristic (Phone app writes contacts/URL/location/commands)
   pConfigChar = pService->createCharacteristic(
       CHAR_CONFIG_UUID,
-      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_READ);
+      BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR | BLECharacteristic::PROPERTY_READ);
   pConfigChar->setCallbacks(new ConfigCharCallbacks());
   pConfigChar->setValue(contact1.c_str());
 
-  // 3. Status characteristic (Phone app reads live wearable state)
   pStatusChar = pService->createCharacteristic(
       CHAR_STATUS_UUID,
       BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
   pStatusChar->addDescriptor(new BLE2902());
-  String initialStatus = "{\"t\":\"status\",\"mode\":\"" + ownerMode + "\",\"bat\":78,\"fw\":\"2.2.0\"}";
+  String initialStatus = "{\"t\":\"status\",\"mode\":\"" + ownerMode + "\",\"fw\":\"2.4.0\"}";
   pStatusChar->setValue(initialStatus.c_str());
 
   pService->start();
@@ -1157,46 +814,52 @@ void setupBLE() {
   BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
   pAdvertising->addServiceUUID(SERVICE_UUID);
   pAdvertising->setScanResponse(true);
-  pAdvertising->setMinInterval(0x20); // 20ms - 40ms fast responsive advertising
+  pAdvertising->setMinInterval(0x20);
   pAdvertising->setMaxInterval(0x40);
   pAdvertising->start();
 
-  Serial.println(F("[BLE] GATT Server active. Advertising as 'SafeGuard'..."));
+  Serial.printf("[BLE] GATT Server active ('SafeGuard'). Free heap after BLE: %u bytes\n", ESP.getFreeHeap());
 }
 
 // ------------------------------------------------------------------------------
-// 11. TOUCH SENSOR ENGINE (Auto-Detects Touch on GPIO1 or GPIO2)
+// 10. TOUCH SENSOR ENGINE (GPIO2 & GPIO1 — Double-Tap OR 1.5s Hold)
 // ------------------------------------------------------------------------------
-bool readTouchSensorPin(int *activePinOut = nullptr) {
-  if (digitalRead(TOUCH_PIN) == HIGH) {
-    if (activePinOut) *activePinOut = TOUCH_PIN;
-    return true;
-  }
-  // Also check GPIO1 if no analog mic is actively biasing GPIO1, so touch works on either GPIO1 or GPIO2!
-  if (!micHardwareDetected && digitalRead(PIN_MIC_ADC) == HIGH) {
-    if (activePinOut) *activePinOut = PIN_MIC_ADC;
-    return true;
-  }
-  if (activePinOut) *activePinOut = TOUCH_PIN;
-  return false;
-}
-
 void updateTouch() {
   unsigned long now = millis();
-
-  // 1. BOOT WARMUP GUARD: Ignore all inputs during the first 4s after boot/flash
   if (now < BOOT_GUARD_MS) {
-    touchStable = false;
-    touchRaw = false;
-    touchDownMs = 0;
-    tapCount = 0;
     return;
   }
 
-  int triggeredPin = TOUCH_PIN;
-  bool raw = readTouchSensorPin(&triggeredPin);
+  static int gpio2IdleState = LOW;
+  static bool firstCheckAfterBootGuard = true;
+  if (firstCheckAfterBootGuard) {
+    firstCheckAfterBootGuard = false;
+    gpio2IdleState = digitalRead(TOUCH_PIN);
+    Serial.printf("[TOUCH INIT] Calibrated GPIO2 idle baseline = %s\n",
+                  gpio2IdleState == HIGH ? "HIGH" : "LOW");
+  }
 
-  // 2. Hardware Debounce filter (60ms stable window)
+  bool r2 = (digitalRead(TOUCH_PIN) != gpio2IdleState);
+  bool r1 = (digitalRead(TOUCH_PIN_ALT) == HIGH);
+  bool raw = r2 || r1;
+  int triggeredPin = r2 ? TOUCH_PIN : TOUCH_PIN_ALT;
+
+  // If GPIO2 changes steady-state baseline for > 4.5s (e.g. TTP223 auto-recalibration), adapt baseline
+  static unsigned long r2ContinuousStartMs = 0;
+  if (r2) {
+    if (r2ContinuousStartMs == 0) r2ContinuousStartMs = now;
+    else if (now - r2ContinuousStartMs > 4500UL) {
+      gpio2IdleState = digitalRead(TOUCH_PIN);
+      r2ContinuousStartMs = 0;
+      touchStable = false;
+      touchRaw = false;
+      touchDownMs = 0;
+      return;
+    }
+  } else {
+    r2ContinuousStartMs = 0;
+  }
+
   if (raw != touchRaw) {
     touchRaw = raw;
     rawChangedMs = now;
@@ -1206,53 +869,52 @@ void updateTouch() {
     touchStable = touchRaw;
 
     if (touchStable) {
-      // --- FINGER TOUCH DOWN ---
       touchDownMs = now;
       digitalWrite(PIN_STATUS_LED, HIGH);
       Serial.printf("[TOUCH GPIO%d] Touch sensor pressed (HIGH).\n", triggeredPin);
     } else {
-      // --- FINGER RELEASED / LIFTED ---
       digitalWrite(PIN_STATUS_LED, LOW);
       unsigned long pressDuration = (touchDownMs > 0) ? (now - touchDownMs) : 0;
       touchDownMs = 0;
+      unsigned long effectiveCooldown = benchFastMode ? 1500UL : COOLDOWN_MS;
 
-      if (pressDuration < MIN_TAP_MS) {
-        // Ignore brief electrical spike (< 80ms)
+      if (pressDuration == 0) {
+        // Already handled by continuous hold trigger while pressed
+      } else if (pressDuration < MIN_TAP_MS) {
+        Serial.printf("[TOUCH] Brief spike (%lu ms < %lu ms) rejected — no SOS.\n", pressDuration, MIN_TAP_MS);
       } else if (pressDuration <= MAX_TAP_MS) {
-        // In Child Mode, touch SOS is disabled so children cannot accidentally trigger panic alerts
         if (ownerMode == "child" || !touchSosEnabled) {
-          Serial.println(F("[TOUCH] Child Mode active — accidental tap SOS suppressed (Hold 3s to call parent)."));
+          Serial.printf("[TOUCH] Child Mode active — accidental tap (%lu ms) suppressed.\n", pressDuration);
           tapCount = 0;
         } else {
-          // Adult Mode: Double-tap triggers SOS
           if (tapCount == 0) {
             tapCount = 1;
             lastTapTime = now;
-            Serial.println(F("[TOUCH] Valid Tap 1 detected (Release verified). Tap once more within 1.2s for SOS."));
+            Serial.printf("[TOUCH] Valid Tap 1 (%lu ms) detected. Tap once more within 1.2s for SOS.\n", pressDuration);
           } else if (tapCount == 1 && (now - lastTapTime <= DOUBLE_GAP_MS)) {
             tapCount = 0;
-            if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+            if (now - lastTriggerMs >= effectiveCooldown || lastTriggerMs == 0) {
               Serial.println(F("\n========================================================"));
               Serial.println(F(" [TOUCH] >>> DOUBLE-TAP SOS CONFIRMED! <<<"));
               Serial.println(F("========================================================\n"));
               currentTriggerReason = "pendant_touch";
               triggerPending = true;
               lastTriggerMs = now;
-            } else {
-              Serial.println(F("[TOUCH] Double-tap detected but ignored (cooldown in effect)."));
             }
           }
         }
+      } else {
+        Serial.printf("[TOUCH] Released after %lu ms (shorter than %lu ms hold threshold) — no SOS.\n", pressDuration, holdPanicMs);
       }
     }
   }
 
-  // 3. CONTINUOUS HOLD DETECTION
+  // Continuous Hold Detection (1.5s Hold in Adult Mode -> SOS; 3.0s Hold in Child Mode -> Call Parent)
   if (touchStable && touchDownMs > 0) {
     unsigned long heldMs = now - touchDownMs;
+    unsigned long effectiveCooldown = benchFastMode ? 1500UL : COOLDOWN_MS;
 
     if (ownerMode == "child") {
-      // Child Mode: Holding for 3 seconds calls parent without triggering false panic SOS
       if (heldMs >= CHILD_CALL_HOLD_MS) {
         touchDownMs = 0;
         tapCount = 0;
@@ -1262,10 +924,9 @@ void updateTouch() {
         pendingChildCallParent = true;
       }
     } else if (touchSosEnabled && heldMs >= holdPanicMs) {
-      // Adult Mode: Holding for >= holdPanicMs (default 1.5s) triggers SOS
       touchDownMs = 0;
       tapCount = 0;
-      if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
+      if (now - lastTriggerMs >= effectiveCooldown || lastTriggerMs == 0) {
         Serial.println(F("\n========================================================"));
         Serial.printf(" [TOUCH] >>> %.1fs HOLD-TO-PANIC SOS CONFIRMED! <<<\n", holdPanicMs / 1000.0);
         Serial.println(F("========================================================\n"));
@@ -1276,20 +937,18 @@ void updateTouch() {
     }
   }
 
-  // 4. Tap timeout: reset state if 2nd tap doesn't arrive within DOUBLE_GAP_MS
   if (tapCount == 1 && (now - lastTapTime > DOUBLE_GAP_MS) && !touchStable) {
     tapCount = 0;
-    Serial.println(F("[TOUCH] Double-tap window expired. Standby."));
+    Serial.println(F("[TOUCH] Single tap expired (>1.2s without 2nd tap) — Accidental touch rejected. Standby."));
   }
 }
 
 void testTouchLive() {
-  Serial.println(F("\n--- Live Touch Sensor Pin Monitor (Checks GPIO1 & GPIO2) ---"));
-  Serial.println(F("Touch the TTP223 pad now to observe pin state:"));
+  Serial.println(F("\n--- Live Touch Sensor Pin Monitor (Checks GPIO1 & GPIO2 for 5s) ---"));
   unsigned long start = millis();
   while (millis() - start < 5000) {
-    bool v1 = (digitalRead(1) == HIGH);
-    bool v2 = (digitalRead(2) == HIGH);
+    bool v1 = (digitalRead(TOUCH_PIN_ALT) == HIGH);
+    bool v2 = (digitalRead(TOUCH_PIN) == HIGH);
     bool val = v1 || v2;
     Serial.printf("[TOUCH] %s | GPIO1: %s | GPIO2: %s\n",
                   val ? "TOUCHED" : "not touched",
@@ -1299,10 +958,138 @@ void testTouchLive() {
     delay(200);
   }
   Serial.println(F("--- End of Touch Monitor ---\n"));
+  reset_audio_stream();
 }
 
 // ------------------------------------------------------------------------------
-// 12. DIAGNOSTICS & STATUS CONSOLE
+// 11. LINDANA V7 VOICE DETECTION ENGINE (INMP441 I2S)
+// ------------------------------------------------------------------------------
+void setupVoiceI2S() {
+  Serial.println(F("\n[VOICE] Initializing Lindana model test v7 (INMP441 I2S)..."));
+  Serial.printf("  Slice: %d samples (%d ms), slices per window: %d\n",
+                (int)SLICE, (int)(1000UL * SLICE / EI_CLASSIFIER_FREQUENCY),
+                EI_CLASSIFIER_SLICES_PER_MODEL_WINDOW);
+
+  snap = (int16_t *)malloc(SLICE * sizeof(int16_t));
+  // Try 16000 samples (32 KB) first; fall back to 8000 samples (16 KB) if BLE left tight heap
+  RING = 16000;
+  ring = (int16_t *)malloc(RING * sizeof(int16_t));
+  if (!ring) {
+    RING = SLICE;
+    ring = (int16_t *)malloc(RING * sizeof(int16_t));
+  }
+
+  if (!ring || !snap) {
+    Serial.println(F("[VOICE] WARNING: Could not allocate I2S buffers. Touch/SMS/Call/BLE still active."));
+    i2sVoiceReady = false;
+    return;
+  }
+  memset(ring, 0, RING * sizeof(int16_t));
+
+  i2s.setPins(PIN_I2S_SCK, PIN_I2S_WS, -1, PIN_I2S_SD);
+  if (!i2s.begin(I2S_MODE_STD, EI_CLASSIFIER_FREQUENCY,
+                 I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO, SLOT)) {
+    Serial.println(F("[VOICE] WARNING: I2S failed to start. Check INMP441 wiring (SCK=7, WS=10, SD=0)."));
+    i2sVoiceReady = false;
+    return;
+  }
+
+  run_classifier_init();
+  // Priority 1 (same as loopTask) so capture_task and loop() share the single-core CPU fairly
+  xTaskCreate(capture_task, "capture", 4096, nullptr, 1, nullptr);
+  i2sVoiceReady = true;
+  Serial.printf("[VOICE] Active! Ring=%u samples, Free heap=%u bytes. Say \"call the police\" (~30 cm).\n",
+                (unsigned int)RING, ESP.getFreeHeap());
+}
+
+void updateVoiceI2S() {
+  if (!i2sVoiceReady || !ring || !snap || voicePausedForTouchTest || touchStable || tapCount > 0) return;
+
+  static uint32_t last_voice_trigger = 0;
+  static uint32_t last_status = millis();
+  static float best = 0;
+  static uint32_t skipped = 0;
+
+  uint32_t avail = total_samples - consumed;
+  if (avail < SLICE) return;
+
+  while (avail >= 2 * SLICE) {                 // drop oldest slice if behind
+    rpos = (rpos + SLICE) % RING;
+    consumed += SLICE;
+    avail -= SLICE;
+    skipped++;
+  }
+
+  size_t first = RING - rpos;                 // copy one slice out of the ring buffer
+  if (first >= SLICE) {
+    memcpy(snap, ring + rpos, SLICE * sizeof(int16_t));
+  } else {
+    memcpy(snap, ring + rpos, first * sizeof(int16_t));
+    memcpy(snap + first, ring, (SLICE - first) * sizeof(int16_t));
+  }
+  int peak = 0;
+  for (size_t i = 0; i < SLICE; i++) {
+    int a = abs(snap[i]);
+    if (a > peak) peak = a;
+  }
+  rpos = (rpos + SLICE) % RING;
+  consumed += SLICE;
+
+  signal_t signal;
+  signal.total_length = SLICE;
+  signal.get_data = &get_audio_data;
+
+  ei_impulse_result_t result = {0};
+  uint32_t t = millis();
+  EI_IMPULSE_ERROR err = run_classifier_continuous(&signal, &result, false);
+  uint32_t took = millis() - t;
+  if (err != EI_IMPULSE_OK) {
+    Serial.printf("ERR: classifier returned %d\n", err);
+    return;
+  }
+  if (warmup > 0) {
+    warmup--;
+    return;
+  }
+
+  float p = 0;
+  for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
+    if (strcmp(result.classification[i].label, TRIGGER_LABEL) == 0) {
+      p = result.classification[i].value;
+    }
+  }
+  if (p > best) best = p;
+
+  if (p >= PRINT_MIN || (benchFastMode && peak > 600)) {
+    for (size_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
+      Serial.printf("%s: %.2f  ", result.classification[i].label, result.classification[i].value);
+    }
+    Serial.printf("| peak %d | %lu ms\n", peak, (unsigned long)took);
+  }
+
+  unsigned long effectiveVoiceCooldown = benchFastMode ? 1500UL : VOICE_COOLDOWN_MS;
+  if (p >= TRIGGER_THRESHOLD && millis() - last_voice_trigger > effectiveVoiceCooldown) {
+    last_voice_trigger = millis();
+    Serial.println(F(">>> KEYWORD DETECTED: CALL THE POLICE <<<"));
+    currentTriggerReason = "pendant_voice";
+    triggerPending = true;
+    lastTriggerMs = millis();
+    return;
+  }
+
+  if (millis() - last_status >= STATUS_EVERY_MS) {
+    Serial.printf("[status] slice peak %d | best Callthepolice %.2f | skipped slices %lu | %lu ms/slice (limit %d)%s\n",
+                  peak, best, (unsigned long)skipped, (unsigned long)took,
+                  (int)(1000UL * SLICE / EI_CLASSIFIER_FREQUENCY),
+                  took > 1000UL * SLICE / EI_CLASSIFIER_FREQUENCY ? "  TOO SLOW" : "");
+    mic_peak = 0;
+    best = 0;
+    last_status = millis();
+  }
+}
+
+// ------------------------------------------------------------------------------
+// 12. DIAGNOSTICS & SERIAL CONSOLE COMMANDS
 // ------------------------------------------------------------------------------
 void diagnose() {
   Serial.println(F("\n================ DIAGNOSTICS ================"));
@@ -1311,207 +1098,59 @@ void diagnose() {
   Serial.print(F("GSM Registered: ")); Serial.println(modem.isNetworkConnected() ? F("YES") : F("NO"));
   Serial.print(F("Operator:       ")); Serial.println(modem.getOperator());
   Serial.print(F("Signal (0-31):  ")); Serial.println(modem.getSignalQuality());
-  Serial.print(F("Battery mV:     ")); Serial.println(modem.getBattVoltage());
-  Serial.printf("Touch Pin:      GPIO%d (%s)\n", TOUCH_PIN, digitalRead(TOUCH_PIN) == HIGH ? "HIGH" : "LOW");
-  Serial.printf("Mic Pin:        GPIO%d (%s)\n", PIN_MIC_ADC, micHardwareDetected ? "ACTIVE" : "STANDBY");
+  Serial.printf("Touch Pins:     GPIO2=%s | GPIO1=%s\n",
+                digitalRead(TOUCH_PIN) == HIGH ? "HIGH" : "LOW",
+                digitalRead(TOUCH_PIN_ALT) == HIGH ? "HIGH" : "LOW");
+  Serial.printf("INMP441 I2S:    %s (SCK=%d, WS=%d, SD=%d)\n",
+                i2sVoiceReady ? "ACTIVE (Lindana v7)" : "STANDBY", PIN_I2S_SCK, PIN_I2S_WS, PIN_I2S_SD);
   Serial.printf("Wearer Mode:    %s (Touch SOS: %s)\n", ownerMode.c_str(), touchSosEnabled ? "ON" : "OFF");
   Serial.print(F("GPS Characters: ")); Serial.println(gps.charsProcessed());
   Serial.print(F("GPS Satellites: ")); Serial.println(gps.satellites.isValid() ? gps.satellites.value() : 0);
-  Serial.print(F("WiFi Status:    ")); Serial.println(WiFi.status() == WL_CONNECTED ? "Connected (" + WiFi.localIP().toString() + ")" : "Disconnected");
-  Serial.print(F("BLE Connected:  ")); Serial.println(bleClientConnected ? F("YES (Phone paired)") : F("Advertising"));
-  Serial.print(F("Current Loc:    ")); Serial.printf("%s, %s [%s]\n", lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
+  Serial.print(F("BLE Connected:  ")); Serial.println(bleClientConnected ? F("YES (Phone paired)") : F("Advertising as 'SafeGuard'"));
+  Serial.printf("Current Loc:    %s, %s [%s]\n", lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
+  Serial.printf("3D Mapbox Link: %s?lat=%s&lng=%s\n", trackViewerUrl.c_str(), lastLat.c_str(), lastLon.c_str());
+  Serial.printf("Free Heap RAM:  %u bytes\n", ESP.getFreeHeap());
   Serial.println(F("=============================================\n"));
+  reset_audio_stream();
 }
 
 void showWearableStatus() {
   Serial.println(F("\n================ WEARABLE STATUS ================"));
   Serial.printf("Device Name:    %s\n", BLE_DEVICE_NAME);
   Serial.printf("MAC Address:    %s\n", deviceMacAddress.c_str());
-  Serial.printf("Linked User:    %s\n", linkedUserEmail.c_str());
-  Serial.printf("User UUID:      %s\n", linkedUserId.c_str());
+  Serial.printf("Linked User:    %s (%s)\n", linkedUserEmail.c_str(), linkedUserId.c_str());
   Serial.printf("Wearer Mode:    %s (Touch SOS: %s, Hold: %lu ms)\n",
                 ownerMode.c_str(), touchSosEnabled ? "ENABLED" : "DISABLED", holdPanicMs);
-  Serial.printf("Touch Pin:      GPIO%d | Mic Pin: GPIO%d\n", TOUCH_PIN, PIN_MIC_ADC);
-  Serial.printf("Supabase URL:   %s\n", supabaseUrl.c_str());
   Serial.printf("Contacts:       [1] %s (%s)\n", contact1.c_str(), contact1Name.c_str());
   if (contact2.length() > 0) Serial.printf("                [2] %s (%s)\n", contact2.c_str(), contact2Name.c_str());
   if (contact3.length() > 0) Serial.printf("                [3] %s (%s)\n", contact3.c_str(), contact3Name.c_str());
-  Serial.printf("WiFi:           %s\n", WiFi.status() == WL_CONNECTED ? "ONLINE" : "OFFLINE");
   Serial.printf("GSM:            %s (Signal: %d/31)\n", modem.isNetworkConnected() ? "ONLINE" : "SEARCHING", modem.getSignalQuality());
   Serial.printf("BLE:            %s\n", bleClientConnected ? "CONNECTED TO PHONE" : "READY TO PAIR");
   Serial.printf("Location:       Lat: %s, Lon: %s\n", lastLat.c_str(), lastLon.c_str());
   Serial.printf("Location Mode:  %s\n", currentLocSource.c_str());
+  Serial.printf("3D Mapbox Link: %s?lat=%s&lng=%s\n", trackViewerUrl.c_str(), lastLat.c_str(), lastLon.c_str());
   Serial.println(F("=================================================\n"));
-}
-
-void removeSimPin(const char *pin) {
-  if (modem.getSimStatus() == SIM_LOCKED) {
-    modem.simUnlock(pin);
-    delay(3000);
-  }
-  modem.sendAT(GF("+CLCK=\"SC\",0,\""), pin, GF("\""));
-  int res = modem.waitResponse(10000L);
-  Serial.println(res == 1 ? F("PIN lock removed successfully.") : F("Failed to remove PIN lock."));
+  reset_audio_stream();
 }
 
 void printMenu() {
   Serial.println(F("\n--- SafeGuard Console Commands ---"));
-  Serial.println(F(" Touch (GPIO2): Double-tap OR Hold 1.5s -> Trigger Touch SOS (Adult Mode)"));
-  Serial.println(F(" Child Mode:    Touch SOS disabled; Hold GPIO2 3s -> Call Parent"));
-  Serial.println(F(" Voice (GPIO1): Speak emergency keyword / shout near mic -> Trigger Voice SOS"));
-  Serial.println(F(" touch = Test Touch Sensor pin (GPIO2) live (5s monitor)"));
-  Serial.println(F(" s = Send SOS Location SMS & log to Supabase"));
-  Serial.println(F(" l = Show current location (Multi-tier: GPS/WiFi/BLE/Anchor)"));
-  Serial.println(F(" g = Test indoor Wi-Fi Geolocation live (ip-api.com)"));
-  Serial.println(F(" v = Test Microphone audio levels (GPIO1) live (5s monitor)"));
-  Serial.println(F(" mode child / mode adult = Switch wearer mode"));
-  Serial.println(F(" t = Send test SMS to Contact 1"));
+  Serial.println(F(" Touch (GPIO2/1): Double-tap OR Hold 1.5s -> Trigger Touch SOS (BLE + Alarm + SMS + Call)"));
+  Serial.println(F(" Voice (INMP441): Say \"call the police\" -> Trigger Voice SOS (BLE + Alarm + SMS + Call)"));
+  Serial.println(F(" touch = Test Touch Sensor pins (GPIO1 & GPIO2) live (5s monitor)"));
+  Serial.println(F(" s = Send SOS Location SMS + Voice Call + BLE Alert"));
+  Serial.println(F(" l = Show current location (GPS)"));
+  Serial.println(F(" t = Send test SMS (Alina Harbour 3D Live Map) to Contact 1"));
   Serial.println(F(" c = Place voice call to Contact 1"));
   Serial.println(F(" h = Hang up active voice call"));
-  Serial.println(F(" u = Sync emergency contacts from Supabase DB now"));
+  Serial.println(F(" b = Test BLE SOS Alert + Beacon to SafeLink Phone App"));
+  Serial.println(F(" a = Test Alarm beep / LED blink (alert_beep)"));
+  Serial.println(F(" mode child / mode adult = Switch wearer mode"));
   Serial.println(F(" w = Show Wearable info & linked user status"));
-  Serial.println(F(" r = Send wearable heartbeat to Supabase"));
   Serial.println(F(" m = Display current 3D Mapbox live tracking link"));
-  Serial.println(F(" settrack <url> = Set tracking viewer (e.g. settrack github OR settrack ngrok)"));
   Serial.println(F(" d = Run full hardware diagnostics"));
-  Serial.println(F(" p = Remove SIM PIN lock"));
-  Serial.println(F(" i = Calibrate indoor location (e.g. setloc -1.2921,36.8219)\n"));
-}
-
-// ------------------------------------------------------------------------------
-// 12.1 MICROPHONE & TINYML VOICE DETECTION ENGINE (GPIO1)
-// ------------------------------------------------------------------------------
-int voiceConsecutiveHits = 0;
-
-void setupMicrophone() {
-  pinMode(PIN_MIC_ADC, INPUT);
-
-  Serial.printf("\n[VOICE ENGINE] Initializing Audio Subsystem on GPIO%d...\n", PIN_MIC_ADC);
-  Serial.printf("[VOICE MODEL] Embedded TFLite-Micro Keyword Model: %u bytes\n", g_safeguard_model_len);
-  Serial.println(F("[VOICE MODEL] Target Keywords: 'tuma_msaada', 'piga_polisi', 'send_help', 'call_police'"));
-
-  analogReadResolution(12); // 12-bit ADC (0 - 4095)
-  long sum = 0;
-  int minVal = 4095;
-  int maxVal = 0;
-  for (int i = 0; i < 30; i++) {
-    int val = analogRead(PIN_MIC_ADC);
-    sum += val;
-    if (val < minVal) minVal = val;
-    if (val > maxVal) maxVal = val;
-    delay(4);
-  }
-
-  int diff = maxVal - minVal;
-  int avg = sum / 30;
-
-  // MAX9814 / Electret mic module sits around ~1.25V-2.0V DC bias (ADC ~1300-2700)
-  if (diff > 15 && diff < 1200 && avg > 1000 && avg < 3000) {
-    micHardwareDetected = true;
-    micNoiseFloor = avg;
-    Serial.printf("[VOICE] Active Microphone DETECTED on GPIO%d! (Bias: %d, Noise: %d)\n", PIN_MIC_ADC, avg, diff);
-    Serial.println(F("[VOICE] Acoustic distress & keyword detection ARMED on GPIO1."));
-  } else {
-    micHardwareDetected = false;
-    micNoiseFloor = avg;
-    // Restore digital INPUT_PULLDOWN on GPIO1 so Touch Sensor works on EITHER GPIO1 or GPIO2!
-    pinMode(PIN_MIC_ADC, INPUT_PULLDOWN);
-    pinMode(TOUCH_PIN, INPUT_PULLDOWN);
-    Serial.printf("[VOICE] Microphone on GPIO%d in standby (Raw: %d, Diff: %d).\n", PIN_MIC_ADC, avg, diff);
-    Serial.println(F("[VOICE] Touch Sensor active on BOTH GPIO1 & GPIO2 + BLE mode.\n"));
-  }
-}
-
-void updateVoice() {
-  if (!micHardwareDetected) return;
-
-  unsigned long now = millis();
-  // Strictly prioritize Touch Sensor (GPIO2): never evaluate voice while GPIO2 is touched or within 3s of touch activity
-  if (touchStable || tapCount > 0 || (rawChangedMs > 0 && (now - rawChangedMs < 3000)) || digitalRead(TOUCH_PIN) == HIGH) {
-    voiceConsecutiveHits = 0;
-    return;
-  }
-
-  if (now - lastMicSampleMs < 60) return;
-  lastMicSampleMs = now;
-
-  int maxSample = 0;
-  int minSample = 4095;
-  for (int i = 0; i < 25; i++) {
-    int sample = analogRead(PIN_MIC_ADC);
-    if (sample > maxSample) maxSample = sample;
-    if (sample < minSample) minSample = sample;
-  }
-
-  int peakToPeak = maxSample - minSample;
-
-  // Require sustained acoustic energy across 3 consecutive windows so ADC spikes never false-trigger
-  if (peakToPeak > 2000 && maxSample >= MIC_SHOUT_THRESHOLD) {
-    voiceConsecutiveHits++;
-    if (voiceConsecutiveHits >= 3) {
-      voiceConsecutiveHits = 0;
-      if (now - lastTriggerMs >= COOLDOWN_MS || lastTriggerMs == 0) {
-        Serial.printf("\n[VOICE] EMERGENCY ACOUSTIC PATTERN DETECTED ON GPIO%d! (Peak: %d, Vpp: %d)\n",
-                      PIN_MIC_ADC, maxSample, peakToPeak);
-        currentTriggerReason = "pendant_voice";
-        triggerPending = true;
-        lastTriggerMs = now;
-      }
-    }
-  } else {
-    voiceConsecutiveHits = 0;
-  }
-}
-
-void monitorMicLive() {
-  Serial.println(F("\n--- Live Microphone & Audio Level Monitor (5 seconds) ---"));
-  Serial.printf("Microphone Pin: GPIO%d | Baseline Noise Floor: %d | Hardware Detected: %s\n",
-                PIN_MIC_ADC, micNoiseFloor, micHardwareDetected ? "YES" : "STANDBY/NOT WIRED");
-  Serial.printf("Embedded Model: %u bytes (Keywords: tuma_msaada, piga_polisi, send_help, call_police)\n", g_safeguard_model_len);
-  Serial.println(F("Speak, shout, or tap near the mic to observe audio levels:"));
-
-  unsigned long start = millis();
-  while (millis() - start < 5000) {
-    int maxVal = 0;
-    int minVal = 4095;
-    for (int i = 0; i < 35; i++) {
-      int s = (PIN_MIC_ADC <= 4) ? analogRead(PIN_MIC_ADC) : (digitalRead(PIN_MIC_ADC) ? 3000 : 0);
-      if (s > maxVal) maxVal = s;
-      if (s < minVal) minVal = s;
-    }
-    int vpp = maxVal - minVal;
-    int bars = map(constrain(vpp, 0, 3000), 0, 3000, 0, 20);
-
-    Serial.print(F("Audio ["));
-    for (int b = 0; b < 20; b++) {
-      Serial.print(b < bars ? "#" : " ");
-    }
-    Serial.printf("] Vpp: %4d | Peak: %4d\n", vpp, maxVal);
-    delay(120);
-  }
-  Serial.println(F("--- End of Mic Monitor ---\n"));
-}
-
-void scanWiFi() {
-  Serial.println(F("\n[WiFi] Scanning nearby 2.4 GHz networks..."));
-  WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
-  delay(100);
-  int n = WiFi.scanNetworks();
-  if (n == 0) {
-    Serial.println(F("[WiFi] No networks found."));
-  } else {
-    Serial.printf("[WiFi] Found %d networks:\n", n);
-    for (int i = 0; i < n; ++i) {
-      Serial.printf("  %2d: %-24s (Signal: %4d dBm, Ch: %2d, %s)\n",
-                    i + 1,
-                    WiFi.SSID(i).c_str(),
-                    WiFi.RSSI(i),
-                    WiFi.channel(i),
-                    (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secured");
-    }
-  }
-  Serial.println();
+  Serial.println(F(" i = Show or calibrate location (e.g. setloc -1.290785,36.781769)"));
+  Serial.println(F(" ? = Show this command menu\n"));
 }
 
 // ------------------------------------------------------------------------------
@@ -1521,24 +1160,24 @@ void setup() {
   pinMode(PIN_STATUS_LED, OUTPUT);
   digitalWrite(PIN_STATUS_LED, LOW);
 
-  pinMode(TOUCH_PIN, INPUT_PULLDOWN); // Internal pull-down on GPIO2 for TTP223B touch sensor
+  pinMode(TOUCH_PIN, INPUT_PULLDOWN);
+  pinMode(TOUCH_PIN_ALT, INPUT_PULLDOWN);
+  delay(20);
+  gpio2StuckHighAtBoot = (digitalRead(TOUCH_PIN) == HIGH);
 
   Serial.begin(115200);
+  Serial.setTimeout(50); // Fast 50ms Serial read timeout so commands execute instantly even with "No line ending"
   unsigned long startWait = millis();
-  while (!Serial && millis() - startWait < 3000) delay(10);
+  while (!Serial && millis() - startWait < 2500) delay(10);
 
   Serial.println(F("\n=================================================="));
-  Serial.println(F(" SafeGuard GPS Pendant — Master Firmware v2.2.0"));
-  Serial.println(F(" Multi-Tier Indoor/Outdoor Location Enabled"));
+  Serial.println(F(" SafeGuard GPS Pendant — Master Firmware v2.4.0"));
+  Serial.println(F(" Lindana v7 Voice + Touch + Alina Harbour + BLE"));
   Serial.println(F("=================================================="));
 
-  // Initialize Microphone (GPIO1) & Voice Subsystem
-  setupMicrophone();
-
-  // 1. MAC Address (Read directly from factory eFuse registers)
+  // 1. Read MAC Address
   uint8_t baseMac[6];
-  esp_err_t mErr = esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
-  if (mErr == ESP_OK) {
+  if (esp_read_mac(baseMac, ESP_MAC_WIFI_STA) == ESP_OK) {
     char macStr[18];
     snprintf(macStr, sizeof(macStr), "%02X:%02X:%02X:%02X:%02X:%02X",
              baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
@@ -1548,85 +1187,57 @@ void setup() {
   }
   Serial.printf("Device MAC Address: %s\n", deviceMacAddress.c_str());
 
-  // 2. Load stored preferences from Flash
+  // 2. Load stored preferences & Alina Harbour Apartments anchor from Flash
   loadSettingsFromFlash();
 
-  // 3. Standalone Cellular & GPS Mode (Zero Wi-Fi Dependency)
-  WiFi.mode(WIFI_OFF);
-  Serial.println(F("[SYSTEM] Operating Mode: Standalone Cellular (GSM/SMS & Satellite GPS)"));
-  Serial.println(F("[SYSTEM] Zero Wi-Fi dependency enabled. Ready for outdoor and mobile use."));
+  // 3. Initialize BLE GATT Server ("SafeGuard") BEFORE allocating I2S ring buffers
+  //    so the ESP32-C3 BLE stack always gets its contiguous DRAM block cleanly!
+  setupBLE();
 
-  // 4. Initialize SIM800L UART (UART1 on GPIO5, GPIO6)
-  SerialAT.setRxBufferSize(1024);
-  SerialAT.begin(9600, SERIAL_8N1, SIM_RX, SIM_TX);
-  delay(3000); // 3-second settle time matching working gsm_test_esp.ino
-
-  Serial.println(F("[GSM] Initializing SIM800L module..."));
-  bool alive = false;
-  for (int i = 0; i < 20 && !alive; i++) {
-    alive = modem.testAT(1000);
-    Serial.print('.');
-  }
-  Serial.println();
-
-  if (!alive) {
-    Serial.println(F("[GSM] WARNING: No response from SIM800L. Check power & 5V/GND."));
-  } else {
-    // Run modem.init()
-    modem.init();
-
-    // Disable command echo & set text mode
-    modem.sendAT(GF("E0"));
-    modem.waitResponse(500);
-    modem.sendAT(GF("+CMGF=1"));
-    modem.waitResponse(500);
-    modem.sendAT(GF("+CSCS=\"GSM\""));
-    modem.waitResponse(500);
-
-    if (modem.getSimStatus() == SIM_LOCKED) {
-      if (strlen(simPin) > 0) modem.simUnlock(simPin);
-      else Serial.println(F("[GSM] SIM locked but simPin is empty."));
-    }
-
-    if (modem.isNetworkConnected()) {
-      Serial.printf("[GSM] Already registered on: %s (Signal: %d/31)\n",
-                    modem.getOperator().c_str(), modem.getSignalQuality());
-    } else {
-      Serial.println(F("[GSM] Waiting for cellular network registration..."));
-      unsigned long regStart = millis();
-      bool registered = false;
-      while (millis() - regStart < 90000L) {
-        if (modem.isNetworkConnected()) {
-          registered = true;
-          break;
-        }
-        int sq = modem.getSignalQuality();
-        Serial.printf("[GSM] Searching for Safaricom cell tower... (Signal: %d/31)\n", sq);
-        delay(3000);
-      }
-
-      if (registered) {
-        Serial.printf("[GSM] Registered on: %s (Signal: %d/31)\n",
-                      modem.getOperator().c_str(), modem.getSignalQuality());
-      } else {
-        Serial.printf("[GSM] Not registered yet (Signal: %d/31). Continuing startup...\n", modem.getSignalQuality());
-      }
-    }
-  }
-
-  // 5. Initialize GPS UART (UART0 on GPIO4, GPIO3)
+  // 4. Initialize GPS UART (UART0 on GPIO4, GPIO3)
   pinMode(GPS_RX, INPUT_PULLUP);
   gpsSerial.setRxBufferSize(512);
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
   Serial.println(F("[GPS] NEO-6M receiver active on UART0."));
 
-  // 6. Initialize Low-Power BLE GATT Server
-  setupBLE();
+  // 5. Initialize SIM800L UART (UART1 on GPIO5, GPIO6) — fast non-blocking startup
+  SerialAT.setRxBufferSize(1024);
+  SerialAT.begin(9600, SERIAL_8N1, SIM_RX, SIM_TX);
+  delay(1500);
 
-  // Initial blink
+  Serial.print(F("[GSM] Checking SIM800L"));
+  bool alive = false;
+  for (int i = 0; i < 5 && !alive; i++) {
+    alive = modem.testAT(500);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  if (!alive) {
+    Serial.println(F("[GSM] SIM800L warming up in background (will auto-init before SMS/Call)."));
+  } else {
+    modem.init();
+    modem.sendAT(GF("E0"));
+    modem.waitResponse(300);
+    modem.sendAT(GF("+CMGF=1"));
+    modem.waitResponse(300);
+    modem.sendAT(GF("+CSCS=\"GSM\""));
+    modem.waitResponse(300);
+    if (modem.isNetworkConnected()) {
+      Serial.printf("[GSM] Registered on: %s (Signal: %d/31)\n",
+                    modem.getOperator().c_str(), modem.getSignalQuality());
+    } else {
+      Serial.printf("[GSM] SIM800L online (Signal: %d/31) — registering in background.\n",
+                    modem.getSignalQuality());
+    }
+  }
+
+  // 6. Initialize INMP441 I2S + Lindana v7 LAST (exact v7 startup order!)
+  setupVoiceI2S();
+
   blinkLed(2, 100, 100);
   printMenu();
-  Serial.println(F("[SYSTEM] Ready! Touch sensor active on GPIO1 & GPIO2 (Double-tap or Hold 1.5s for SOS).\n"));
+  Serial.println(F("[SYSTEM] Ready! Touch (GPIO1/GPIO2), Voice (\"Call the police\"), BLE, and Serial Console active.\n"));
 }
 
 // ------------------------------------------------------------------------------
@@ -1635,52 +1246,61 @@ void setup() {
 void loop() {
   feedGPS();
   updateTouch();
-  updateVoice();
+  updateVoiceI2S();
 
   unsigned long now = millis();
 
-  // Handle LED Find Strobe if active
+  // Handle LED Find Strobe or Hold-time after voice trigger
   if (findLedEndMs > now) {
     digitalWrite(PIN_STATUS_LED, (now % 200 < 100) ? HIGH : LOW);
-  } else if (!touchStable) {
-    if (!bleClientConnected) {
-      digitalWrite(PIN_STATUS_LED, (now % 3500 < 15) ? HIGH : LOW);
-    } else {
-      digitalWrite(PIN_STATUS_LED, (now % 2000 < 25) ? HIGH : LOW);
-    }
+  } else if (led_off_at && now > led_off_at) {
+    digitalWrite(PIN_STATUS_LED, LOW);
+    led_off_at = 0;
   }
 
-  // Handle pending BLE / Guardian commands outside BLE interrupt context
+  // Handle pending BLE / Phone App commands outside BLE interrupt context
   if (pendingStatusCmd) {
     pendingStatusCmd = false;
     sendStatusJsonOverBLE();
   }
   if (pendingLocateCmd) {
     pendingLocateCmd = false;
+    Serial.println(F("\n[APP CONTROL] Sending live ESP32 coordinates (Alina Harbour / GPS) to Phone App..."));
     String lat, lon;
-    getFix(lat, lon, 3000UL);
+    getFix(lat, lon, 1500UL);
     sendLocationJsonOverBLE();
+    reset_audio_stream();
   }
   if (pendingFindCmd) {
     pendingFindCmd = false;
-    findLedEndMs = now + 10000UL;
-    Serial.println(F("[FIND] Strobing Status LED on GPIO8 for 10 seconds!"));
+    Serial.println(F("\n======================================================="));
+    Serial.println(F(" [APP CONTROL] Blinking ESP32 LED (GPIO8) from Phone App!"));
+    Serial.println(F("=======================================================\n"));
+    alert_beep();
+    findLedEndMs = millis() + 8000UL;
+    sendStatusJsonOverBLE();
   }
   if (pendingRemoteSosCmd) {
     pendingRemoteSosCmd = false;
+    Serial.println(F("\n======================================================="));
+    Serial.println(F(" [APP CONTROL] Remote SOS Triggered from SafeLink App!"));
+    Serial.println(F("======================================================="));
     currentTriggerReason = "remote_guardian";
     triggerPending = true;
   }
   if (pendingCancelSosCmd) {
     pendingCancelSosCmd = false;
-    updateBleSosBeacon(false);
+    findLedEndMs = 0;
+    digitalWrite(PIN_STATUS_LED, LOW);
     notifyPhoneOverBLE(0x00);
     Serial.println(F("[SOS] Active SOS & BLE beacon cancelled by Guardian."));
+    reset_audio_stream();
   }
   if (pendingHangupCmd) {
     pendingHangupCmd = false;
     modem.callHangup();
     Serial.println(F("[CALL] Active call hung up."));
+    reset_audio_stream();
   }
   if (pendingCallTarget.length() > 0) {
     String target = pendingCallTarget;
@@ -1693,125 +1313,131 @@ void loop() {
     callNumber(guardianPhone);
   }
 
-  // Periodic heartbeat to Supabase (every 60s if WiFi connected)
-  if (now - lastHeartbeatMs >= HEARTBEAT_INT_MS) {
-    lastHeartbeatMs = now;
-    if (WiFi.status() == WL_CONNECTED) {
-      registerWearableInDatabase();
-    }
-  }
-
   // Touch, Voice, or Remote Guardian trigger detected
   if (triggerPending) {
     triggerPending = false;
     if (currentTriggerReason == "pendant_voice") {
-      Serial.printf("\n[SOS] Voice Keyword / Acoustic Pattern detected on Microphone GPIO%d!\n", PIN_MIC_ADC);
+      Serial.println(F("\n[SOS] Voice Keyword (\"Call the police\") detected on INMP441!"));
     } else if (currentTriggerReason == "remote_guardian") {
       Serial.println(F("\n[SOS] Remote Guardian SOS triggered from SafeLink App!"));
     } else {
-      Serial.printf("\n[SOS] Touch pattern detected on Touch Sensor GPIO%d!\n", TOUCH_PIN);
+      Serial.println(F("\n[SOS] Touch pattern detected on Touch Sensor (GPIO1/GPIO2)!"));
     }
-    sendLocationAlert(FIX_WAIT_MS);
+    if (benchFastMode) {
+      uint8_t alertCode = (currentTriggerReason == "pendant_voice") ? 0x02 : 0x01;
+      notifyPhoneOverBLE(alertCode);
+      alert_beep();
+      led_off_at = millis() + 1000UL;
+      Serial.printf(">>> [BENCHMARK TRIAL COMPLETE] Trigger='%s' (BLE+LED confirmed; ready for next trial in 1.5s!) <<<\n\n", currentTriggerReason.c_str());
+    } else {
+      sendLocationAlert(FIX_WAIT_MS);
+    }
   }
 
-  // Interactive Serial Console Command Handler
+  // Interactive Serial Console Command Handler (Works with or without newline in Serial Monitor!)
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    if (cmd.length() == 0) return;
-
-    if (cmd == "s") {
-      currentTriggerReason = "pendant_touch";
-      sendLocationAlert(FIX_WAIT_MS);
-    } else if (cmd == "l" || cmd == "loc") {
-      showLocation();
-    } else if (cmd == "v") {
-      monitorMicLive();
-    } else if (cmd == "touch" || cmd == "touchtest") {
-      testTouchLive();
-    } else if (cmd == "mode child") {
-      ownerMode = "child";
-      touchSosEnabled = false;
-      prefs.begin("safeguard", false);
-      prefs.putString("owner_mode", "child");
-      prefs.putBool("touch_sos", false);
-      prefs.end();
-      Serial.println(F("[MODE] Switched to CHILD mode (Touch SOS disabled; Hold 3s on GPIO2 calls parent)."));
-    } else if (cmd == "mode adult") {
-      ownerMode = "adult";
-      touchSosEnabled = true;
-      prefs.begin("safeguard", false);
-      prefs.putString("owner_mode", "adult");
-      prefs.putBool("touch_sos", true);
-      prefs.end();
-      Serial.println(F("[MODE] Switched to ADULT mode (Touch SOS enabled on GPIO2)."));
-    } else if (cmd == "g") {
-      String gLat, gLon, gCity;
-      if (fetchWifiGeolocation(gLat, gLon, gCity)) {
-        Serial.printf("[WIFI GEO] Tested OK! %s, %s (%s)\n", gLat.c_str(), gLon.c_str(), gCity.c_str());
-        Serial.printf("Maps: https://maps.google.com/?q=%s,%s\n", gLat.c_str(), gLon.c_str());
+    if (cmd.length() > 0) {
+      Serial.printf("\n[SERIAL CMD] Executing: '%s'\n", cmd.c_str());
+      if (cmd == "bench on") {
+        benchFastMode = true;
+        Serial.println(F("[BENCHMARK MODE] Fast Trial Mode ENABLED (1.5s cooldown; BLE+LED active; skips 25s SMS/Call delay)."));
+        reset_audio_stream();
+      } else if (cmd == "bench off") {
+        benchFastMode = false;
+        voicePausedForTouchTest = false;
+        Serial.println(F("[BENCHMARK MODE] Fast Trial Mode DISABLED (Full SMS + Voice Call dispatch restored)."));
+        reset_audio_stream();
+      } else if (cmd == "voice off") {
+        voicePausedForTouchTest = true;
+        Serial.println(F("[TOUCH TEST MODE] Voice inference paused — Touch Sensor polling at 1000 Hz (1 ms resolution)!"));
+      } else if (cmd == "voice on") {
+        voicePausedForTouchTest = false;
+        reset_audio_stream();
+        Serial.println(F("[TOUCH TEST MODE] Voice inference resumed."));
+      } else if (cmd == "s") {
+        currentTriggerReason = "pendant_touch";
+        sendLocationAlert(FIX_WAIT_MS);
+      } else if (cmd == "l" || cmd == "loc") {
+        showLocation();
+      } else if (cmd == "touch" || cmd == "touchtest") {
+        testTouchLive();
+      } else if (cmd == "t") {
+        testSMS();
+      } else if (cmd == "c") {
+        callNumber();
+      } else if (cmd == "h") {
+        modem.callHangup();
+        Serial.println(F("Hung up call."));
+        reset_audio_stream();
+      } else if (cmd == "b") {
+        Serial.println(F("[TEST] Sending BLE SOS Alert (0x02) + 'SL' Beacon to SafeLink Phone App..."));
+        notifyPhoneOverBLE(0x02);
+        alert_beep();
+        led_off_at = millis() + LED_HOLD_MS;
+      } else if (cmd == "a") {
+        Serial.println(F("[TEST] Running alert_beep() alarm..."));
+        alert_beep();
+        led_off_at = millis() + LED_HOLD_MS;
+      } else if (cmd == "mode child") {
+        ownerMode = "child";
+        touchSosEnabled = false;
+        prefs.begin("safeguard", false);
+        prefs.putString("owner_mode", "child");
+        prefs.putBool("touch_sos", false);
+        prefs.end();
+        Serial.println(F("[MODE] Switched to CHILD mode (Touch SOS disabled; Hold 3s calls parent)."));
+        sendStatusJsonOverBLE();
+        reset_audio_stream();
+      } else if (cmd == "mode adult") {
+        ownerMode = "adult";
+        touchSosEnabled = true;
+        prefs.begin("safeguard", false);
+        prefs.putString("owner_mode", "adult");
+        prefs.putBool("touch_sos", true);
+        prefs.end();
+        Serial.println(F("[MODE] Switched to ADULT mode (Touch SOS enabled)."));
+        sendStatusJsonOverBLE();
+        reset_audio_stream();
+      } else if (cmd == "w") {
+        showWearableStatus();
+      } else if (cmd == "m") {
+        String mLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon;
+        Serial.println(F("\n--- 3D Mapbox Live Telemetry Link ---"));
+        Serial.printf("Coordinates: %s, %s [%s]\n", lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
+        Serial.printf("Live URL:    %s\n", mLink.c_str());
+        Serial.println(F("--------------------------------------\n"));
+        reset_audio_stream();
+      } else if (cmd == "d") {
+        diagnose();
+      } else if (cmd.startsWith("setloc ")) {
+        String coords = cmd.substring(7);
+        int comma = coords.indexOf(',');
+        if (comma != -1) {
+          String sLat = coords.substring(0, comma);
+          String sLon = coords.substring(comma + 1);
+          sLat.trim();
+          sLon.trim();
+          saveIndoorAnchor(sLat, sLon);
+        } else {
+          Serial.println(F("Usage: setloc <lat>,<lon> (e.g. setloc -1.2907850038543573,36.78176897301627)"));
+        }
+        reset_audio_stream();
+      } else if (cmd == "i") {
+        Serial.printf("Current Location: %s, %s (%s)\n",
+                      lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
+        Serial.printf("3D Mapbox Live Link:     %s?lat=%s&lng=%s\n",
+                      trackViewerUrl.c_str(), lastLat.c_str(), lastLon.c_str());
+        Serial.println(F("To change, type: setloc <lat>,<lon>"));
+        reset_audio_stream();
+      } else if (cmd == "?") {
+        printMenu();
+        reset_audio_stream();
       } else {
-        Serial.println(F("[WIFI GEO] Failed. Ensure Wi-Fi is connected."));
+        Serial.printf("Unknown command '%s'. Type '?' for menu.\n", cmd.c_str());
+        reset_audio_stream();
       }
-    } else if (cmd == "t") {
-      testSMS();
-    } else if (cmd == "c") {
-      callNumber();
-    } else if (cmd == "h") {
-      modem.callHangup();
-      Serial.println(F("Hung up call."));
-    } else if (cmd == "u") {
-      syncContactsFromSupabase();
-    } else if (cmd == "w") {
-      showWearableStatus();
-    } else if (cmd == "r") {
-      registerWearableInDatabase();
-    } else if (cmd == "m") {
-      String incidentRef = "SOS-" + linkedUserId.substring(0, 4) + "-" + String((unsigned long)(millis() % 0xFFFF), HEX);
-      incidentRef.toUpperCase();
-      String mLink = trackViewerUrl + "?lat=" + lastLat + "&lng=" + lastLon + "&id=" + incidentRef;
-      Serial.println(F("\n--- 3D Mapbox Live Telemetry Link ---"));
-      Serial.printf("Coordinates: %s, %s [%s]\n", lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
-      Serial.printf("Live URL:    %s\n", mLink.c_str());
-      Serial.println(F("--------------------------------------\n"));
-    } else if (cmd.startsWith("settrack ")) {
-      String tUrl = cmd.substring(9);
-      tUrl.trim();
-      if (tUrl == "github") {
-        trackViewerUrl = "https://joychepchumba.github.io/gps-safety-wearable/track.html";
-      } else if (tUrl == "ngrok") {
-        trackViewerUrl = backendUrl + "/alert/track/live";
-      } else {
-        trackViewerUrl = tUrl;
-      }
-      prefs.begin("safeguard", false);
-      prefs.putString("track_url", trackViewerUrl);
-      prefs.end();
-      Serial.printf("[TRACK URL] Active 3D Mapbox viewer updated to: %s\n", trackViewerUrl.c_str());
-    } else if (cmd == "d") {
-      diagnose();
-    } else if (cmd == "p") {
-      removeSimPin("1234");
-    } else if (cmd.startsWith("setloc ")) {
-      String coords = cmd.substring(7);
-      int comma = coords.indexOf(',');
-      if (comma != -1) {
-        String sLat = coords.substring(0, comma);
-        String sLon = coords.substring(comma + 1);
-        sLat.trim();
-        sLon.trim();
-        saveIndoorAnchor(sLat, sLon);
-      } else {
-        Serial.println(F("Usage: setloc <lat>,<lon> (e.g. setloc -1.2907850038543573,36.78176897301627)"));
-      }
-    } else if (cmd == "i") {
-      Serial.printf("Current Indoor Location: %s, %s (%s)\n",
-                    lastLat.c_str(), lastLon.c_str(), currentLocSource.c_str());
-      Serial.printf("3D Mapbox Live Link:     %s?lat=%s&lng=%s\n",
-                    trackViewerUrl.c_str(), lastLat.c_str(), lastLon.c_str());
-      Serial.println(F("To change, type: setloc <lat>,<lon>"));
-    } else if (cmd == "?") {
-      printMenu();
     }
   }
 

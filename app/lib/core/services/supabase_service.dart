@@ -301,13 +301,12 @@ class SupabaseService {
     } else if (responderStatus != null) {
       updates['responder_status'] = responderStatus;
     }
-    if (lastLat != null) {
-      updates['last_lat'] = lastLat;
+    // Note: last_lat and last_lng are omitted from public.users updates if not present in schema
+    try {
+      await _client.from('users').update(updates).eq('id', userId);
+    } catch (e) {
+      debugPrint('[SUPABASE] updateUserProfile error: $e');
     }
-    if (lastLng != null) {
-      updates['last_lng'] = lastLng;
-    }
-    await _client.from('users').update(updates).eq('id', userId);
 
     try {
       await _client.auth.updateUser(UserAttributes(

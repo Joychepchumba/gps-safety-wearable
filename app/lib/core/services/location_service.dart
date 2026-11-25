@@ -5,6 +5,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class LocationService {
   SupabaseClient get _client => Supabase.instance.client;
 
+  Future<Position?> getLastKnownPosition() async {
+    try {
+      return await Geolocator.getLastKnownPosition();
+    } catch (e) {
+      debugPrint('[LocationService] getLastKnownPosition error: $e');
+      return null;
+    }
+  }
+
   Future<bool> isLocationServiceEnabled() async {
     try {
       return await Geolocator.isLocationServiceEnabled();
@@ -133,6 +142,9 @@ class LocationService {
   }
 
   Future<void> saveGpsLog(String panicEventId, Position pos, String userId) async {
+    final nowIso = DateTime.now().toIso8601String();
+    
+    // 1. Insert into realtime_gps_logs table
     try {
       await _client.from('realtime_gps_logs').insert({
         'panic_event_id': panicEventId,
@@ -140,10 +152,37 @@ class LocationService {
         'latitude': pos.latitude,
         'longitude': pos.longitude,
         'accuracy_m': pos.accuracy,
-        'recorded_at': DateTime.now().toIso8601String(),
+        'recorded_at': nowIso,
       });
     } catch (e) {
-      debugPrint('[LocationService] Error saving GPS log: $e');
+      debugPrint('[LocationService] Error saving to realtime_gps_logs: $e');
+    }
+
+    // 2. Insert into locations table
+    try {
+      await _client.from('locations').insert({
+        'panic_event_id': panicEventId,
+        'user_id': userId,
+        'latitude': pos.latitude,
+        'longitude': pos.longitude,
+        'accuracy_m': pos.accuracy,
+        'recorded_at': nowIso,
+        'is_anonymised': false,
+      });
+    } catch (e) {
+      debugPrint('[LocationService] Note: saving to locations table: $e');
+    }
+
+    // 3. Update users table with current location
+    try {
+      await _client.from('users').update({
+        'last_latitude': pos.latitude,
+        'last_longitude': pos.longitude,
+        'last_location_updated_at': nowIso,
+        'is_location_anonymised': false,
+      }).eq('id', userId);
+    } catch (e) {
+      debugPrint('[LocationService] Note: updating users table location: $e');
     }
   }
 }

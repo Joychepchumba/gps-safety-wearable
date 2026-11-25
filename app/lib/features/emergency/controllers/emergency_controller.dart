@@ -190,18 +190,39 @@ class EmergencyController extends ChangeNotifier {
   }
 
   void _initVoiceActivation() {
+    // Matches Lindana f719c88: Wake phrase -> silent SMS alert + VoiceAlertSentDialog (NOT panic countdown screen)
     _voiceService.init(onDetected: () {
-      debugPrint('[EmergencyController] Voice wake phrase detected! Triggering SOS.');
-      trigger(TriggerMethod.voiceKeyword);
+      debugPrint('[EmergencyController] Voice wake phrase detected! Sending silent alert.');
+      triggerSilentVoiceAlert();
     }).then((_) {
       if (_voiceService.isEnabled && !_isBatterySaverEnabled) {
-        _voiceService.startListening();
+        _voiceService.startIfEnabled();
       }
     });
   }
 
+  /// Dispatches a silent emergency alert when the user's wake phrase is detected
+  /// and displays the Lindana `📩 ALERT SENT` confirmation dialog without opening
+  /// the full-screen panic countdown page.
+  Future<void> triggerSilentVoiceAlert() async {
+    lastTriggerMethod = TriggerMethod.voiceKeyword;
+    VoiceActivationService.showVoiceAlertSentDialog();
+    await _sendAlert();
+    // Reset controller state back to idle after silent dispatch so UI stays normal
+    state = EmergencyState.idle;
+    notifyListeners();
+  }
+
+  void refreshVoiceState() {
+    _updateBackgroundNotification();
+    notifyListeners();
+  }
+
   Future<void> trigger(TriggerMethod method) async {
     if (state == EmergencyState.triggered || state == EmergencyState.countdown) return;
+
+    // Pause background voice while in active Panic Mode (matches Lindana f719c88)
+    unawaited(_voiceService.pause());
 
     int configuredWindow = 10;
     try {
@@ -266,6 +287,10 @@ class EmergencyController extends ChangeNotifier {
 
       Future.delayed(const Duration(seconds: 2), () {
         state = EmergencyState.idle;
+        // Restore voice hook after panic is cancelled (matches Lindana f719c88)
+        if (_voiceService.isEnabled && !_isBatterySaverEnabled) {
+          unawaited(_voiceService.resume());
+        }
         notifyListeners();
       });
     }
@@ -377,16 +402,46 @@ class EmergencyController extends ChangeNotifier {
                 ? 'Triggered via SafeLink Pendant. BLE & Cloud Community Responders alerted.'
                 : 'Triggered via $triggerMethodString. BLE & Cloud Community Responders alerted.',
           };
-          final response = await _supabaseService.client
+
+          // Check if an active incident already exists for this user to prevent duplicate records
+          final List existingActive = await _supabaseService.client
               .from('panic_events')
-              .insert(eventData)
-              .select()
-              .single();
+              .select('id, triggered_at')
+              .eq('user_id', user.id)
+              .eq('status', 'active')
+              .order('triggered_at', ascending: false)
+              .limit(1);
+
+          Map<String, dynamic> response;
+          if (existingActive.isNotEmpty) {
+            final activeId = existingActive.first['id'].toString();
+            response = await _supabaseService.client
+                .from('panic_events')
+                .update({
+                  'latitude': lat,
+                  'longitude': lng,
+                  'location_accuracy_m': accuracy,
+                  'trigger_method': triggerMethodString,
+                  'notes': eventData['notes'],
+                  'updated_at': DateTime.now().toIso8601String(),
+                })
+                .eq('id', activeId)
+                .select()
+                .single();
+            debugPrint('[EMERGENCY] Updated ongoing active panic event: $activeId');
+          } else {
+            response = await _supabaseService.client
+                .from('panic_events')
+                .insert(eventData)
+                .select()
+                .single();
+            debugPrint('[EMERGENCY] Created new active panic event: ${response['id']}');
+          }
 
           activeEvent = PanicEventModel.fromJson(response);
           _panicEventId = activeEvent?.id ?? _panicEventId;
         } catch (dbErr) {
-          debugPrint('[EMERGENCY] Supabase panic_events insert notice: $dbErr');
+          debugPrint('[EMERGENCY] Supabase panic_events upsert notice: $dbErr');
         }
       }
 
@@ -492,10 +547,20 @@ class EmergencyController extends ChangeNotifier {
 
   Future<void> resolveAlert(String panicEventId) async {
     try {
-      await _supabaseService.client
-          .from('panic_events')
-          .update({'status': 'resolved', 'resolved_at': DateTime.now().toIso8601String()})
-          .eq('id', panicEventId);
+      final user = _supabaseService.currentUser;
+      if (user != null) {
+        // Resolve all active panic events for this user
+        await _supabaseService.client
+            .from('panic_events')
+            .update({'status': 'resolved', 'resolved_at': DateTime.now().toIso8601String()})
+            .eq('user_id', user.id)
+            .eq('status', 'active');
+      } else {
+        await _supabaseService.client
+            .from('panic_events')
+            .update({'status': 'resolved', 'resolved_at': DateTime.now().toIso8601String()})
+            .eq('id', panicEventId);
+      }
     } catch (e) {
       debugPrint('Error resolving alert: $e');
     } finally {
@@ -504,6 +569,9 @@ class EmergencyController extends ChangeNotifier {
       unawaited(_bleService.sendPendantCommand('CMD:CANCEL'));
       state = EmergencyState.idle;
       activeEvent = null;
+      if (_voiceService.isEnabled && !_isBatterySaverEnabled) {
+        unawaited(_voiceService.resume());
+      }
       notifyListeners();
     }
   }
