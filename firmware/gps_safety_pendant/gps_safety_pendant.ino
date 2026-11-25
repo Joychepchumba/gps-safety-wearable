@@ -145,8 +145,8 @@ const unsigned long DOUBLE_GAP_MS    = 1200UL;   // Max time between tap 1 and t
 const unsigned long COOLDOWN_MS      = 10000UL;  // Minimum time between triggered alerts
 
 // Location state in RAM & Flash (Alina Harbour Apartments, Nairobi)
-String lastLat = "-1.2907850038543573";   // Alina Harbour Apartments
-String lastLon = "36.78176897301627";
+String lastLat = "-1.291042";   // Alina Harbour Apartments
+String lastLon = "36.782177";
 String currentLocSource = "Alina Harbour Apartments Anchor";
 unsigned long lastFixMs = 0;
 unsigned long lastBleLocMs = 0;
@@ -286,11 +286,11 @@ void loadSettingsFromFlash() {
   trackViewerUrl  = prefs.getString("track_url", trackViewerUrl);
 
   // Load saved indoor anchor coordinates (Alina Harbour Apartments)
-  lastLat = prefs.getString("last_lat", "-1.2907850038543573");
-  lastLon = prefs.getString("last_lon", "36.78176897301627");
+  lastLat = prefs.getString("last_lat", "-1.291042");
+  lastLon = prefs.getString("last_lon", "36.782177");
   if (lastLat == "-1.309250" || lastLat == "-1.292100" || lastLat == "-1.307300" || lastLat.length() == 0) {
-    lastLat = "-1.2907850038543573";
-    lastLon = "36.78176897301627";
+    lastLat = "-1.291042";
+    lastLon = "36.782177";
     currentLocSource = "Alina Harbour Apartments Anchor";
     prefs.putString("last_lat", lastLat);
     prefs.putString("last_lon", lastLon);
@@ -390,8 +390,8 @@ bool getFix(String &lat, String &lon, unsigned long timeoutMs) {
     return true;
   }
 
-  lat = "-1.2907850038543573";
-  lon = "36.78176897301627";
+  lat = "-1.291042";
+  lon = "36.782177";
   currentLocSource = "Alina Harbour Apartments Anchor";
   return true;
 }
@@ -1149,7 +1149,7 @@ void printMenu() {
   Serial.println(F(" w = Show Wearable info & linked user status"));
   Serial.println(F(" m = Display current 3D Mapbox live tracking link"));
   Serial.println(F(" d = Run full hardware diagnostics"));
-  Serial.println(F(" i = Show or calibrate location (e.g. setloc -1.290785,36.781769)"));
+  Serial.println(F(" i = Show or calibrate location (e.g. setloc -1.291042,36.782177)"));
   Serial.println(F(" ? = Show this command menu\n"));
 }
 
@@ -1421,7 +1421,7 @@ void loop() {
           sLon.trim();
           saveIndoorAnchor(sLat, sLon);
         } else {
-          Serial.println(F("Usage: setloc <lat>,<lon> (e.g. setloc -1.2907850038543573,36.78176897301627)"));
+          Serial.println(F("Usage: setloc <lat>,<lon> (e.g. setloc -1.291042,36.782177)"));
         }
         reset_audio_stream();
       } else if (cmd == "i") {
