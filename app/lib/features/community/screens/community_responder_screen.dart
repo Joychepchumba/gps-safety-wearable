@@ -782,7 +782,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
 
               // 2. LIVE RESPONDER RADAR MAP (Shows My Location + Users in Distress)
               Container(
-                height: 235,
+                height: (MediaQuery.of(context).size.height * 0.28).clamp(180.0, 240.0),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(
@@ -1246,14 +1246,16 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
             ),
           ),
           child: Center(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: selected ? color : context.textSecondary,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: selected ? color : context.textSecondary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
             ),
           ),
@@ -1329,16 +1331,20 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
                   color: AppColors.sosRed,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(
-                  entry.distanceMeters < 5
-                      ? 'Nearby (< 5m)'
-                      : (entry.distanceMeters < 1000
-                          ? '${entry.distanceMeters.round()} m'
-                          : '${(entry.distanceMeters / 1000).toStringAsFixed(1)} km'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11.5,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    entry.distanceMeters < 5
+                        ? 'Nearby (< 5m)'
+                        : (entry.distanceMeters < 1000
+                            ? '${entry.distanceMeters.round()} m'
+                            : '${(entry.distanceMeters / 1000).toStringAsFixed(1)} km'),
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
                   ),
                 ),
               ),
@@ -1350,11 +1356,14 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
               Expanded(
                 child: Text(
                   'GPS: ${entry.latitude.toStringAsFixed(5)}, ${entry.longitude.toStringAsFixed(5)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: context.textSecondary, fontSize: 11.5),
                 ),
               ),
+              const SizedBox(width: 6),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: Colors.amber.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(8),
@@ -1363,14 +1372,18 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.timer_outlined, size: 12.5, color: Colors.amber),
-                    const SizedBox(width: 4.5),
-                    Text(
-                      'Broadcast: ${entry.broadcastDurationFormatted}',
-                      style: const TextStyle(
-                        color: Colors.amber,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                    const Icon(Icons.timer_outlined, size: 12, color: Colors.amber),
+                    const SizedBox(width: 4),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Live: ${entry.broadcastDurationFormatted}',
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ],
@@ -1382,6 +1395,7 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
           Row(
             children: [
               Expanded(
+                flex: 3,
                 child: ElevatedButton.icon(
                   onPressed: () => _respondToDistress(entry),
                   icon: Icon(
@@ -1389,31 +1403,40 @@ class _CommunityResponderScreenState extends State<CommunityResponderScreen> {
                     color: Colors.white,
                     size: 15,
                   ),
-                  label: Text(
-                    entry.status == 'accepted' ? 'Responding Now' : 'Accept & Respond',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      entry.status == 'accepted' ? 'Responding Now' : 'Accept & Respond',
+                      maxLines: 1,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: entry.status == 'accepted' ? AppColors.success : AppColors.sosRed,
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => _openExternalDirections(entry),
-                icon: const Icon(Icons.directions_walk_rounded, size: 15, color: AppColors.accent),
-                label: const Text(
-                  'Navigate',
-                  style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: AppColors.accent),
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              Expanded(
+                flex: 2,
+                child: OutlinedButton.icon(
+                  onPressed: () => _openExternalDirections(entry),
+                  icon: const Icon(Icons.directions_walk_rounded, size: 15, color: AppColors.accent),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Navigate',
+                      maxLines: 1,
+                      style: TextStyle(color: AppColors.accent, fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppColors.accent),
+                    padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
               ),
             ],

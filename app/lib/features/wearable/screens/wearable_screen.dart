@@ -211,7 +211,7 @@ class _WearableScreenState extends State<WearableScreen> {
                   children: [
                     Image.asset(
                       'assets/images/pendant_device.jpg',
-                      height: 180,
+                      height: (MediaQuery.of(context).size.height * 0.22).clamp(140.0, 180.0),
                       width: double.infinity,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => Container(
@@ -375,14 +375,18 @@ class _WearableScreenState extends State<WearableScreen> {
                               borderRadius: BorderRadius.circular(20),
                             ),
                           ),
-                          child: Text(
-                            controller.isScanning
-                                ? 'Scanning...'
-                                : (controller.isBleConnected ? 'Disconnect' : 'Connect'),
-                            style: TextStyle(
-                              color: context.textPrimary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12.5,
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              controller.isScanning
+                                  ? 'Scanning...'
+                                  : (controller.isBleConnected ? 'Disconnect' : 'Connect'),
+                              maxLines: 1,
+                              style: TextStyle(
+                                color: context.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
                             ),
                           ),
                         ),
@@ -459,22 +463,32 @@ class _WearableScreenState extends State<WearableScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Touch sensitivity',
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Text(
+                            'Touch sensitivity',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                        Text(
-                          isChildMode
-                              ? 'Disabled (Child Mode)'
-                              : '${controller.touchSensitivitySeconds.round()} seconds',
-                          style: TextStyle(
-                            color: isChildMode ? AppColors.warning : AppColors.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              isChildMode
+                                  ? 'Disabled (Child Mode)'
+                                  : '${controller.touchSensitivitySeconds.round()} seconds',
+                              style: TextStyle(
+                                color: isChildMode ? AppColors.warning : AppColors.primary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -511,20 +525,30 @@ class _WearableScreenState extends State<WearableScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Cancellation window',
-                          style: TextStyle(
-                            color: context.textPrimary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
+                        Flexible(
+                          child: Text(
+                            'Cancellation window',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: context.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
-                        Text(
-                          '${controller.cancellationWindowSeconds.round()} seconds',
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${controller.cancellationWindowSeconds.round()} seconds',
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ),
                       ],
@@ -910,14 +934,18 @@ class _WearableScreenState extends State<WearableScreen> {
                           }
                         },
                         icon: const Icon(Icons.sos_rounded, color: AppColors.sosRed, size: 18),
-                        label: Text(
-                          isChildMode
-                              ? 'Trigger ESP32 & App SOS for Child'
-                              : 'Trigger ESP32 Pendant & App SOS Now',
-                          style: const TextStyle(
-                            color: AppColors.sosRed,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            isChildMode
+                                ? 'Trigger ESP32 & App SOS for Child'
+                                : 'Trigger ESP32 Pendant & App SOS Now',
+                            maxLines: 1,
+                            style: const TextStyle(
+                              color: AppColors.sosRed,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
                           ),
                         ),
                         style: OutlinedButton.styleFrom(
@@ -969,7 +997,7 @@ class _WearableScreenState extends State<WearableScreen> {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         decoration: BoxDecoration(
           color: context.inputBg,
           borderRadius: BorderRadius.circular(12),
@@ -978,36 +1006,42 @@ class _WearableScreenState extends State<WearableScreen> {
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(7),
+              padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 17),
+              child: Icon(icon, color: color, size: 16),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 7),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: context.textPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11.5,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        color: context.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11.5,
+                      ),
+                      maxLines: 1,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      color: context.textSecondary,
-                      fontSize: 10,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: context.textSecondary,
+                        fontSize: 10,
+                      ),
+                      maxLines: 1,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

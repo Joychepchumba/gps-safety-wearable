@@ -433,7 +433,11 @@ class _HomeScreenState extends State<HomeScreen> {
     final displayName = _getDisplayName(user);
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final sosButtonSize = min(156.0, screenWidth * 0.40);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final isCompact = screenWidth < 360 || screenHeight < 680;
+    final sosButtonSize = isCompact
+        ? min(136.0, screenWidth * 0.36)
+        : min(156.0, screenWidth * 0.40);
 
     return Scaffold(
       backgroundColor: context.scaffoldBg,
@@ -856,12 +860,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                             color: Colors.amber,
                                           ),
                                           SizedBox(width: 5),
-                                          Text(
-                                            'Blink LED',
-                                            style: TextStyle(
-                                              color: Colors.amber,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 11.5,
+                                          Flexible(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                'Blink LED',
+                                                style: TextStyle(
+                                                  color: Colors.amber,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 11.5,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -924,12 +933,17 @@ class _HomeScreenState extends State<HomeScreen> {
                                             color: AppColors.sosRed,
                                           ),
                                           SizedBox(width: 5),
-                                          Text(
-                                            'Trigger Pendant',
-                                            style: TextStyle(
-                                              color: AppColors.sosRed,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 11.5,
+                                          Flexible(
+                                            child: FittedBox(
+                                              fit: BoxFit.scaleDown,
+                                              child: Text(
+                                                'Trigger Pendant',
+                                                style: TextStyle(
+                                                  color: AppColors.sosRed,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 11.5,
+                                                ),
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1309,27 +1323,31 @@ class _HomeScreenState extends State<HomeScreen> {
               size: 22,
             ),
             const SizedBox(height: 5),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: context.textPrimary,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                style: TextStyle(
+                  color: context.textPrimary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             if (subtitle != null) ...[
               const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: isHighlighted ? AppColors.success : context.textMuted,
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.w600,
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: isHighlighted ? AppColors.success : context.textMuted,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
